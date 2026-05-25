@@ -1,0 +1,21 @@
+{
+  "name": "effekseer-for-roblox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Effekseer runtime bridge and converter for Roblox Rojo/Argon projects",
+  "bin": {
+    "effekseer-for-roblox": "bin/effekseer-for-roblox.js"
+  },
+  "scripts": {
+    "test": "node Tests/convert.test.js",
+    "convert:sample": "node bin/effekseer-for-roblox.js convert ../../Release/Sample/01_Suzuki01/003_snowstorm_effect/snowstorm11.efkproj -o Dev/Plugin/src/ReplicatedStorage/EffekseerEffects/SnowstormSample.luau --module-name SnowstormSample",
+    "build:rojo": "rojo build Dev/Plugin/default.project.json --output Dev/Plugin/EffekseerForRoblox.rbxlx",
+    "build:argon": "argon build Dev/Plugin/default.project.json --output Dev/Plugin/EffekseerForRoblox.argon.rbxlx"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "roblox-open-cloud-sync": "https://github.com/Plumvery/rocs/archive/f10af9376cf9c648d4f6d66acf7497daca7bd2f3.tar.gz"
+  }
+}

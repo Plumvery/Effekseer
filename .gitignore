@@ -65,4 +65,5 @@ __pycache__/
 Tool/fbxsdk
 
 EffekseerTool/
-Dev/Roblox/*.rbxlx
+Dev/Roblox/node_modules/
+Dev/Roblox/Dev/Plugin/*.rbxlx

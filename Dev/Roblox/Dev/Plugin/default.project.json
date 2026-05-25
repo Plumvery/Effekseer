@@ -9,6 +9,9 @@
       },
       "EffekseerEffects": {
         "$path": "src/ReplicatedStorage/EffekseerEffects"
+      },
+      "EffekseerAssets": {
+        "$path": "src/ReplicatedStorage/EffekseerAssets"
       }
     },
     "StarterPlayer": {
