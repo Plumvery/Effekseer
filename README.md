@@ -32,12 +32,19 @@ Supported platforms
 
 - DirectX9, DirectX11, DirectX12, Metal, Vulkan, OpenGL
 - WebGL
+- Roblox (experimental Luau generator/runtime bridge for Rojo and Argon)
 - Unity
 - GodotEngine
 - UnrealEngine
 - DX Library
 - Cocos2d-x
 - Console games (Please mail to effekseer(at)gmail.com)
+
+Roblox bridge
+=========
+
+This fork includes an experimental Roblox bridge under `Tool/EffekseerForRoblox` and `Dev/Roblox`.
+It converts `.efkproj` or `.efkefc` effects into Luau ModuleScripts and plays supported nodes through Roblox `ParticleEmitter` instances, so the output can be synced by Rojo or Argon.
 
 Sponsors
 =========

@@ -1,0 +1,24 @@
+{
+  "name": "EffekseerForRoblox",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "EffekseerRoblox": {
+        "$path": "src/ReplicatedStorage/EffekseerRoblox"
+      },
+      "EffekseerEffects": {
+        "$path": "src/ReplicatedStorage/EffekseerEffects"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "EffekseerDemo": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts/EffekseerDemo.client.luau"
+        }
+      }
+    }
+  }
+}

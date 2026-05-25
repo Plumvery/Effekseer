@@ -61,6 +61,8 @@ Dev/Editor/packages/
 mono_crash.*.json
 mono_crash.*.blob
 Script/__pycache__/aceutils.cpython-37.pyc
+__pycache__/
 Tool/fbxsdk
 
 EffekseerTool/
+Dev/Roblox/*.rbxlx
