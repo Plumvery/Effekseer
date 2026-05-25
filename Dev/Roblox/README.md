@@ -66,6 +66,14 @@ rojo serve Dev/Plugin/default.project.json
 argon serve Dev/Plugin/default.project.json
 ```
 
+## Tests
+
+```bash
+npm test
+```
+
+The converter tests cover Effekseer-style chunk/XML handling, supported and unsupported renderer nodes, hierarchy conversion, rocs asset-map resolution, CLI output, and a regression conversion for an included Effekseer sample project.
+
 ## Runtime use
 
 ```lua

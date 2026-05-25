@@ -3,6 +3,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const { main } = require("../src/cli");
 const {
 	convertProject,
 	extractEditXmlFromEfkefc,
@@ -10,46 +11,65 @@ const {
 	writeLuauModule,
 } = require("../src/converter");
 
-const SIMPLE_PROJECT = `<?xml version="1.0" encoding="utf-8"?>
+const SIMPLE_NODE = `
+<Node>
+  <CommonValues>
+    <MaxGeneration><Value>4</Value></MaxGeneration>
+    <Life><Center>30</Center><Min>20</Min><Max>40</Max></Life>
+    <GenerationTime><Center>2</Center><Min>2</Min><Max>2</Max></GenerationTime>
+  </CommonValues>
+  <LocationValues>
+    <Type>1</Type>
+    <PVA>
+      <Velocity>
+        <Y><Center>0.2</Center><Min>0.1</Min><Max>0.3</Max></Y>
+      </Velocity>
+    </PVA>
+  </LocationValues>
+  <ScalingValues>
+    <Type>3</Type>
+    <SinglePVA>
+      <Scale><Center>0.5</Center><Min>0.25</Min><Max>0.75</Max></Scale>
+    </SinglePVA>
+  </ScalingValues>
+  <RendererCommonValues>
+    <ColorTexture>Texture/Particle.png</ColorTexture>
+    <AlphaBlend>2</AlphaBlend>
+  </RendererCommonValues>
+  <DrawingValues>
+    <Sprite>
+      <ColorAll_Fixed><R>128</R><G>64</G><B>255</B><A>200</A></ColorAll_Fixed>
+    </Sprite>
+  </DrawingValues>
+  <Name>spark</Name>
+  <Children />
+</Node>
+`;
+
+const SIMPLE_PROJECT = createProject(SIMPLE_NODE);
+
+function createProject(nodesXml) {
+	return `<?xml version="1.0" encoding="utf-8"?>
 <EffekseerProject>
   <Root>
     <Children>
-      <Node>
-        <CommonValues>
-          <MaxGeneration><Value>4</Value></MaxGeneration>
-          <Life><Center>30</Center><Min>20</Min><Max>40</Max></Life>
-          <GenerationTime><Center>2</Center><Min>2</Min><Max>2</Max></GenerationTime>
-        </CommonValues>
-        <LocationValues>
-          <Type>1</Type>
-          <PVA>
-            <Velocity>
-              <Y><Center>0.2</Center><Min>0.1</Min><Max>0.3</Max></Y>
-            </Velocity>
-          </PVA>
-        </LocationValues>
-        <ScalingValues>
-          <Type>3</Type>
-          <SinglePVA>
-            <Scale><Center>0.5</Center><Min>0.25</Min><Max>0.75</Max></Scale>
-          </SinglePVA>
-        </ScalingValues>
-        <RendererCommonValues>
-          <ColorTexture>Texture/Particle.png</ColorTexture>
-          <AlphaBlend>2</AlphaBlend>
-        </RendererCommonValues>
-        <DrawingValues>
-          <Sprite>
-            <ColorAll_Fixed><R>128</R><G>64</G><B>255</B><A>200</A></ColorAll_Fixed>
-          </Sprite>
-        </DrawingValues>
-        <Name>spark</Name>
-        <Children />
-      </Node>
+      ${nodesXml}
     </Children>
   </Root>
 </EffekseerProject>
 `;
+}
+
+function tempDir(prefix = "effekseer-roblox-") {
+	return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function writeTempProject(xml, prefix) {
+	const dir = tempDir(prefix);
+	const projectPath = path.join(dir, "effect.efkproj");
+	fs.writeFileSync(projectPath, xml);
+	return { dir, projectPath };
+}
 
 function packUtf8(value) {
 	const raw = Buffer.from(value, "utf8");
@@ -82,6 +102,12 @@ function int32(value) {
 	const buffer = Buffer.alloc(4);
 	buffer.writeInt32LE(value);
 	return buffer;
+}
+
+function chunk(name, data) {
+	const size = Buffer.alloc(4);
+	size.writeUInt32LE(data.length);
+	return Buffer.concat([Buffer.from(name), size, data]);
 }
 
 function writeElementList(nodes, keys, values) {
@@ -119,11 +145,38 @@ function compressEditXml(xml) {
 	return zlib.deflateSync(Buffer.concat(parts));
 }
 
-function testProjectConversion() {
-	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "effekseer-roblox-"));
-	const projectPath = path.join(tempDir, "simple.efkproj");
-	const outputPath = path.join(tempDir, "Simple.luau");
-	fs.writeFileSync(projectPath, SIMPLE_PROJECT);
+function makeEfkefc(xml, extraChunks = []) {
+	const compressed = compressEditXml(xml);
+	return Buffer.concat([Buffer.from("EFKE"), int32(0), ...extraChunks, chunk("EDIT", compressed)]);
+}
+
+function warningCodes(effect) {
+	return effect.warnings.map((warning) => warning.code);
+}
+
+function countWarnings(effect, code) {
+	return warningCodes(effect).filter((candidate) => candidate === code).length;
+}
+
+async function withMutedConsole(callback) {
+	const originalError = console.error;
+	console.error = () => {};
+	try {
+		await callback();
+	} finally {
+		console.error = originalError;
+	}
+}
+
+const tests = [];
+
+function test(name, callback) {
+	tests.push({ name, callback });
+}
+
+test("converts a sprite project into effect data and generated Luau", () => {
+	const { dir, projectPath } = writeTempProject(SIMPLE_PROJECT, "effekseer-roblox-simple-");
+	const outputPath = path.join(dir, "Simple.luau");
 
 	const effect = convertProject(projectPath, {
 		textureMap: { "Texture/Particle.png": "rbxassetid://123" },
@@ -136,18 +189,19 @@ function testProjectConversion() {
 
 	assert.strictEqual(effect.nodes[0].name, "spark");
 	assert.strictEqual(effect.nodes[0].texture, "rbxassetid://123");
+	assert.strictEqual(effect.nodes[0].alphaBlend, 2);
 	assert.strictEqual(effect.nodes[0].transform.emissionDirection, "Top");
+	assert.strictEqual(effect.nodes[0].transform.speed.min > 0, true);
 	assert.deepStrictEqual(effect.warnings, []);
+	assert(fs.readFileSync(outputPath, "utf8").includes("Generated by Dev/Roblox/bin/effekseer-for-roblox.js"));
 	assert(fs.readFileSync(outputPath, "utf8").includes("rbxassetid://123"));
-}
+});
 
-function testRocsAssetMapResolution() {
-	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "effekseer-roblox-rocs-"));
-	const projectPath = path.join(tempDir, "simple.efkproj");
-	fs.mkdirSync(path.join(tempDir, "Texture"), { recursive: true });
-	fs.writeFileSync(projectPath, SIMPLE_PROJECT);
+test("resolves textures from a rocs lock-derived asset map", () => {
+	const { dir, projectPath } = writeTempProject(SIMPLE_PROJECT, "effekseer-roblox-rocs-");
+	fs.mkdirSync(path.join(dir, "Texture"), { recursive: true });
 
-	const sourcePath = path.join(tempDir, "Texture", "Particle.png").replace(/\\/g, "/");
+	const sourcePath = path.join(dir, "Texture", "Particle.png").replace(/\\/g, "/");
 	const effect = convertProject(projectPath, {
 		rocsAssetMap: {
 			bySourcePath: { [sourcePath]: "rbxassetid://456" },
@@ -158,22 +212,137 @@ function testRocsAssetMapResolution() {
 
 	assert.strictEqual(effect.nodes[0].texture, "rbxassetid://456");
 	assert.deepStrictEqual(effect.warnings, []);
-}
+});
 
-function testEfkefcEditExtraction() {
-	const compressed = compressEditXml(SIMPLE_PROJECT);
-	const header = Buffer.concat([Buffer.from("EFKE"), int32(0), Buffer.from("EDIT")]);
-	const size = Buffer.alloc(4);
-	size.writeUInt32LE(compressed.length);
-	const efkefc = Buffer.concat([header, size, compressed]);
-
+test("extracts EDIT XML from efkefc after earlier chunks", () => {
+	const efkefc = makeEfkefc(SIMPLE_PROJECT, [chunk("INFO", Buffer.from([1, 2, 3, 4]))]);
 	const xml = extractEditXmlFromEfkefc(efkefc);
+
 	assert(xml.includes("<EffekseerProject>"));
 	assert(xml.includes("<Name>spark</Name>"));
-}
+});
 
-testProjectConversion();
-testRocsAssetMapResolution();
-testEfkefcEditExtraction();
+test("rejects efkefc data without an EDIT chunk", () => {
+	const efkefc = Buffer.concat([Buffer.from("EFKE"), int32(0), chunk("INFO", Buffer.from([1, 2, 3, 4]))]);
 
-console.log("All EffekseerForRoblox conversion tests passed.");
+	assert.throws(() => extractEditXmlFromEfkefc(efkefc), /does not contain an EDIT chunk/);
+});
+
+test("parses XML text entities and CDATA used in Effekseer project files", () => {
+	const root = parseXml(`<?xml version="1.0"?><EffekseerProject><Root><Name>A &amp; B</Name><Raw><![CDATA[x < y]]></Raw></Root></EffekseerProject>`);
+	const rootNode = root.children.find((child) => child.name === "Root");
+
+	assert.strictEqual(rootNode.children.find((child) => child.name === "Name").text, "A & B");
+	assert.strictEqual(rootNode.children.find((child) => child.name === "Raw").text, "x < y");
+});
+
+test("keeps supported renderer nodes and reports unsupported model renderer nodes", () => {
+	const nodes = [
+		["sprite", 2],
+		["ribbon", 3],
+		["ring", 4],
+		["model", 5],
+		["track", 6],
+	]
+		.map(
+			([name, type]) => `
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <DrawingValues><Type>${type}</Type></DrawingValues>
+  <Name>${name}</Name>
+  <Children />
+</Node>`,
+		)
+		.join("\n");
+	const { projectPath } = writeTempProject(createProject(nodes), "effekseer-roblox-renderers-");
+	const effect = convertProject(projectPath);
+
+	assert.deepStrictEqual(
+		effect.nodes.map((node) => [node.name, node.rendererType, node.rendered]),
+		[
+			["sprite", "Sprite", true],
+			["ribbon", "Ribbon", true],
+			["ring", "Ring", true],
+			["model", "Model", false],
+			["track", "Track", true],
+		],
+	);
+	assert.strictEqual(countWarnings(effect, "renderer_unsupported"), 1);
+});
+
+test("preserves node hierarchy and child effect ids", () => {
+	const project = createProject(`
+<Node>
+  <IsRendered>False</IsRendered>
+  <Name>parent</Name>
+  <Children>
+    <Node>
+      <RendererCommonValues><ColorTexture>Texture/Child.png</ColorTexture></RendererCommonValues>
+      <Name>child</Name>
+      <Children />
+    </Node>
+  </Children>
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-hierarchy-");
+	const effect = convertProject(projectPath, {
+		textureMap: { "Texture/Child.png": "rbxassetid://789" },
+	});
+
+	assert.strictEqual(effect.nodes[0].name, "parent");
+	assert.strictEqual(effect.nodes[0].rendered, false);
+	assert.strictEqual(effect.nodes[0].children[0].id, "1_1");
+	assert.strictEqual(effect.nodes[0].children[0].texture, "rbxassetid://789");
+});
+
+test("converts an Effekseer sample effect as an integration regression", () => {
+	const samplePath = path.resolve(
+		__dirname,
+		"..",
+		"..",
+		"..",
+		"Release",
+		"Sample",
+		"01_Suzuki01",
+		"003_snowstorm_effect",
+		"snowstorm11.efkproj",
+	);
+	const effect = convertProject(samplePath, { moduleName: "SnowstormSample" });
+
+	assert.strictEqual(effect.name, "SnowstormSample");
+	assert(effect.nodes.length > 0);
+	assert.deepStrictEqual(effect.dependencies.textures, [
+		"Texture/Burst01_2.png",
+		"Texture/Particle01.png",
+		"Texture/Particle02.png",
+		"Texture/blue_fire.png",
+	]);
+	assert.strictEqual(countWarnings(effect, "location_fcurve"), 2);
+	assert.strictEqual(countWarnings(effect, "texture_unmapped"), 7);
+});
+
+test("CLI writes output modules and warnings JSON", async () => {
+	const { dir, projectPath } = writeTempProject(SIMPLE_PROJECT, "effekseer-roblox-cli-");
+	const outputPath = path.join(dir, "Out.luau");
+	const warningsPath = path.join(dir, "warnings.json");
+
+	await withMutedConsole(() =>
+		main(["convert", projectPath, "-o", outputPath, "--module-name", "CliEffect", "--warnings-json", warningsPath]),
+	);
+
+	const output = fs.readFileSync(outputPath, "utf8");
+	const warnings = JSON.parse(fs.readFileSync(warningsPath, "utf8"));
+	assert(output.includes('name = "CliEffect"'));
+	assert.strictEqual(warnings.length, 1);
+	assert.strictEqual(warnings[0].code, "texture_unmapped");
+});
+
+(async () => {
+	for (const { name, callback } of tests) {
+		await callback();
+		console.log(`ok - ${name}`);
+	}
+	console.log(`All ${tests.length} EffekseerForRoblox conversion tests passed.`);
+})().catch((error) => {
+	console.error(error);
+	process.exit(1);
+});
