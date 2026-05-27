@@ -33,6 +33,7 @@
 *.vspx
 *.exp
 .DS_Store
+.env
 
 [Oo]bj/
 CMakeFiles/
@@ -66,4 +67,7 @@ Tool/fbxsdk
 
 EffekseerTool/
 Dev/Roblox/node_modules/
+Dev/Roblox/.env
+Dev/Roblox/rocas.toml
 Dev/Roblox/Dev/Plugin/*.rbxlx
+Dev/Roblox/Dev/Plugin/*.rbxlx.lock

@@ -17,6 +17,7 @@ return {
 			"Texture/Particle02.png",
 			"Texture/blue_fire.png",
 		},
+		models = {},
 	},
 	warnings = {
 		{
@@ -82,6 +83,7 @@ return {
 				b = 255,
 				a = 255,
 			},
+			visual = {},
 			life = {
 				center = 300,
 				min = 300,
@@ -182,6 +184,12 @@ return {
 						g = 75,
 						b = 75,
 						a = 255,
+					},
+					visual = {
+						beam = {
+							width = 2,
+							length = 16,
+						},
 					},
 					life = {
 						center = 100,
@@ -284,6 +292,7 @@ return {
 								b = 255,
 								a = 255,
 							},
+							visual = {},
 							life = {
 								center = 120,
 								min = 120,
@@ -386,6 +395,7 @@ return {
 								b = 255,
 								a = 150,
 							},
+							visual = {},
 							life = {
 								center = 120,
 								min = 120,
@@ -492,6 +502,7 @@ return {
 				b = 255,
 				a = 255,
 			},
+			visual = {},
 			life = {
 				center = 300,
 				min = 300,
@@ -592,6 +603,12 @@ return {
 						g = 115,
 						b = 115,
 						a = 255,
+					},
+					visual = {
+						beam = {
+							width = 1,
+							length = 8,
+						},
 					},
 					life = {
 						center = 120,
@@ -694,6 +711,7 @@ return {
 								b = 255,
 								a = 255,
 							},
+							visual = {},
 							life = {
 								center = 120,
 								min = 120,
@@ -800,6 +818,7 @@ return {
 				b = 255,
 				a = 255,
 			},
+			visual = {},
 			life = {
 				center = 240,
 				min = 240,
@@ -902,6 +921,7 @@ return {
 				b = 255,
 				a = 255,
 			},
+			visual = {},
 			life = {
 				center = 300,
 				min = 300,
@@ -1003,6 +1023,7 @@ return {
 						b = 255,
 						a = 255,
 					},
+					visual = {},
 					life = {
 						center = 240,
 						min = 240,

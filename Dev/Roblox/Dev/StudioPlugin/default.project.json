@@ -1,0 +1,15 @@
+{
+  "name": "EffekseerForRobloxStudioPlugin",
+  "tree": {
+    "$className": "Model",
+    "EffekseerForRobloxPlugin": {
+      "$path": "src/Plugin.server.luau"
+    },
+    "PluginConverter": {
+      "$path": "src/PluginConverter.luau"
+    },
+    "EffekseerRoblox": {
+      "$path": "../Plugin/src/ReplicatedStorage/EffekseerRoblox"
+    }
+  }
+}

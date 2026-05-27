@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node Tests/convert.test.js",
     "convert:sample": "node bin/effekseer-for-roblox.js convert ../../Release/Sample/01_Suzuki01/003_snowstorm_effect/snowstorm11.efkproj -o Dev/Plugin/src/ReplicatedStorage/EffekseerEffects/SnowstormSample.luau --module-name SnowstormSample",
+    "convert:sample-pack": "node bin/generate-sample-pack.js",
     "build:rojo": "rojo build Dev/Plugin/default.project.json --output Dev/Plugin/EffekseerForRoblox.rbxlx",
     "build:argon": "argon build Dev/Plugin/default.project.json --output Dev/Plugin/EffekseerForRoblox.argon.rbxlx"
   },
@@ -16,6 +17,6 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "roblox-open-cloud-sync": "https://github.com/Plumvery/rocs/archive/f10af9376cf9c648d4f6d66acf7497daca7bd2f3.tar.gz"
+    "rocas": "https://github.com/Plumvery/rocas/archive/835afe83e66c5ef2266e37899adae444dc3caac2.tar.gz"
   }
 }

@@ -11,8 +11,8 @@ Usage:
 Options:
   --module-name <name>             Effect name stored in the generated module
   --texture-map <file.json>        JSON map from Effekseer texture paths to rbxassetid:// values
-  --rocs-config <rocs.toml>        Read rocs lock files and resolve textures automatically
-  --rocs-sync                      Run rocs sync before resolving textures
+  --rocas-config <rocas.toml>      Read rocas lock files and resolve textures automatically
+  --rocas-sync                     Run rocas sync before resolving textures
   --frame-rate <number>            Effekseer frame rate; default 60
   --unit-scale <number>            Effekseer world unit to Roblox studs; default 0.01
   --particle-size-scale <number>   ParticleEmitter size multiplier; default 1
@@ -38,9 +38,9 @@ function parseArgs(argv) {
 		command,
 		input,
 		frameRate: 60,
-		unitScale: 0.01,
+		unitScale: 0.2,
 		particleSizeScale: 1,
-		rocsSync: false,
+		rocasSync: false,
 	};
 
 	for (let index = 2; index < argv.length; index++) {
@@ -59,10 +59,10 @@ function parseArgs(argv) {
 			options.moduleName = next();
 		} else if (arg === "--texture-map") {
 			options.textureMap = next();
-		} else if (arg === "--rocs-config") {
-			options.rocsConfig = next();
-		} else if (arg === "--rocs-sync") {
-			options.rocsSync = true;
+		} else if (arg === "--rocas-config" || arg === "--rocs-config") {
+			options.rocasConfig = next();
+		} else if (arg === "--rocas-sync" || arg === "--rocs-sync") {
+			options.rocasSync = true;
 		} else if (arg === "--frame-rate") {
 			options.frameRate = Number(next());
 		} else if (arg === "--unit-scale") {
@@ -139,39 +139,39 @@ function fallbackBuildAssetMap(config, cwd) {
 	return result;
 }
 
-async function loadRocsAssetMap(rocsConfigPath, shouldSync) {
-	if (!rocsConfigPath) {
+async function loadRocasAssetMap(rocasConfigPath, shouldSync) {
+	if (!rocasConfigPath) {
 		return null;
 	}
 
-	let rocs;
+	let rocas;
 	try {
-		rocs = require("roblox-open-cloud-sync");
+		rocas = require("rocas");
 	} catch (error) {
 		throw new Error(
-			"rocs integration requires the roblox-open-cloud-sync package. Run `npm install` in Dev/Roblox first.",
+			"rocas integration requires the rocas package. Run `npm install` in Dev/Roblox first.",
 		);
 	}
 
-	const configPath = path.resolve(rocsConfigPath);
+	const configPath = path.resolve(rocasConfigPath);
 	const cwd = path.dirname(configPath);
 
-	if (typeof rocs.loadEnv === "function") {
-		rocs.loadEnv(cwd);
+	if (typeof rocas.loadEnv === "function") {
+		rocas.loadEnv(cwd);
 	}
 
-	const config = rocs.loadConfig(cwd);
+	const config = rocas.loadConfig(cwd);
 
 	if (shouldSync) {
-		const apiKey = process.env.ROCS_API_KEY;
+		const apiKey = process.env.ROCAS_API_KEY || process.env.ROCS_API_KEY;
 		if (!apiKey) {
-			throw new Error("ROCS_API_KEY is required when --rocs-sync is specified.");
+			throw new Error("ROCAS_API_KEY is required when --rocas-sync is specified.");
 		}
-		await rocs.syncAll(config, apiKey, cwd);
+		await rocas.syncAll(config, apiKey, cwd);
 	}
 
-	if (typeof rocs.buildAssetMap === "function") {
-		return rocs.buildAssetMap(config, cwd);
+	if (typeof rocas.buildAssetMap === "function") {
+		return rocas.buildAssetMap(config, cwd);
 	}
 
 	return fallbackBuildAssetMap(config, cwd);
@@ -185,10 +185,10 @@ async function main(argv) {
 	}
 
 	const textureMap = loadTextureMap(options.textureMap);
-	const rocsAssetMap = await loadRocsAssetMap(options.rocsConfig, options.rocsSync);
+	const rocasAssetMap = await loadRocasAssetMap(options.rocasConfig, options.rocasSync);
 	const effect = convertProject(path.resolve(options.input), {
 		textureMap,
-		rocsAssetMap,
+		rocasAssetMap,
 		frameRate: options.frameRate,
 		unitScale: options.unitScale,
 		particleSizeScale: options.particleSizeScale,
@@ -208,4 +208,10 @@ async function main(argv) {
 	}
 }
 
-module.exports = { main, parseArgs };
+module.exports = {
+	fallbackBuildAssetMap,
+	loadRocasAssetMap,
+	loadTextureMap,
+	main,
+	parseArgs,
+};
