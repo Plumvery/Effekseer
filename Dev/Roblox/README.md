@@ -114,9 +114,9 @@ Install it into the local Roblox Studio plugins folder:
 install-studio-plugin.bat
 ```
 
-The generated package is `Dist/EffekseerForRobloxImporter.rbxm`. After installing, restart Studio and use the `Effekseer` toolbar.
+The generated package is `Dist/EffekseerForRobloxImporter.rbxm`. After installing, restart Studio and click the `Effekseer` toolbar button to open the plugin window. Use the window actions to install the runtime, import effects or textures, and preview the selected effect.
 
-For direct `.efkproj` imports, click `Import Textures` and select the referenced texture images before previewing. Temporary texture IDs are valid only for the current Studio session; use `rocas` for uploaded, persistent asset IDs.
+For direct `.efkproj` imports, use `Import Textures` in the plugin window and select the referenced texture images before previewing. Temporary texture IDs are valid only for the current Studio session; use `rocas` for uploaded, persistent asset IDs.
 
 ## Tests
 
