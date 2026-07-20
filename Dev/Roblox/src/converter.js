@@ -363,6 +363,349 @@ function averageXY(vector) {
 	return (Math.abs(vector.x || 0) + Math.abs(vector.y || 0)) * 0.5;
 }
 
+function scaleVector(vector) {
+	return {
+		x: Math.abs(vector.x || 0),
+		y: Math.abs(vector.y || 0),
+		z: Math.abs(vector.z || 0),
+	};
+}
+
+function singleScaleVector(value) {
+	const safeValue = Math.abs(value || 0);
+	return { x: safeValue, y: safeValue, z: safeValue };
+}
+
+function scaleVectorRange(range, factor) {
+	const scale = (vector) => ({
+		x: (vector.x || 0) * factor,
+		y: (vector.y || 0) * factor,
+		z: (vector.z || 0) * factor,
+	});
+	return { center: scale(range.center), min: scale(range.min), max: scale(range.max) };
+}
+
+function keyedChildrenSorted(node, prefix) {
+	return node.children
+		.filter((candidate) => candidate.name.startsWith(prefix))
+		.map((candidate) => ({ index: Number(candidate.name.slice(prefix.length)), node: candidate }))
+		.filter((entry) => Number.isFinite(entry.index))
+		.sort((a, b) => a.index - b.index)
+		.map((entry) => entry.node);
+}
+
+function parseFCurveKeys(axisNode) {
+	if (!axisNode) {
+		return [];
+	}
+	return keyedChildrenSorted(axisNode, "Key")
+		.map((keyNode) => ({
+			frame: numberAt(keyNode, "Frame", 0),
+			value: numberAt(keyNode, "Value", 0),
+		}))
+		.sort((a, b) => a.frame - b.frame);
+}
+
+function evaluateFCurve(keys, frame, defaultValue) {
+	if (!keys.length) {
+		return defaultValue;
+	}
+	if (frame <= keys[0].frame) {
+		return keys[0].value;
+	}
+	const last = keys[keys.length - 1];
+	if (frame >= last.frame) {
+		return last.value;
+	}
+	for (let index = 1; index < keys.length; index++) {
+		if (frame <= keys[index].frame) {
+			const previous = keys[index - 1];
+			const next = keys[index];
+			const span = next.frame - previous.frame;
+			const t = span > 1e-9 ? (frame - previous.frame) / span : 0;
+			return previous.value + (next.value - previous.value) * t;
+		}
+	}
+	return last.value;
+}
+
+const FCURVE_MAX_SAMPLES = 24;
+
+function bakeFCurveVector(container, life, defaults) {
+	const keysNode = find(container, "Keys");
+	if (!keysNode) {
+		return null;
+	}
+
+	const axes = {
+		x: parseFCurveKeys(child(keysNode, "X")),
+		y: parseFCurveKeys(child(keysNode, "Y")),
+		z: parseFCurveKeys(child(keysNode, "Z")),
+		s: parseFCurveKeys(child(keysNode, "S")),
+	};
+	if (!axes.x.length && !axes.y.length && !axes.z.length && !axes.s.length) {
+		return null;
+	}
+
+	const lifeFrames = Math.max(1, life.max || life.center || 1);
+	const frameSet = new Set([0, lifeFrames]);
+	for (const axisKeys of Object.values(axes)) {
+		for (const key of axisKeys) {
+			if (key.frame >= 0 && key.frame <= lifeFrames) {
+				frameSet.add(key.frame);
+			}
+		}
+	}
+	let frames = Array.from(frameSet).sort((a, b) => a - b);
+	if (frames.length > FCURVE_MAX_SAMPLES) {
+		const sampled = new Set();
+		for (let index = 0; index < FCURVE_MAX_SAMPLES; index++) {
+			sampled.add(frames[Math.round((index * (frames.length - 1)) / (FCURVE_MAX_SAMPLES - 1))]);
+		}
+		frames = Array.from(sampled).sort((a, b) => a - b);
+	}
+
+	const scalar = axes.s.length > 0;
+	const values = frames.map((frame) => {
+		if (scalar) {
+			const value = evaluateFCurve(axes.s, frame, defaults.x);
+			return { x: value, y: value, z: value };
+		}
+		return {
+			x: evaluateFCurve(axes.x, frame, defaults.x),
+			y: evaluateFCurve(axes.y, frame, defaults.y),
+			z: evaluateFCurve(axes.z, frame, defaults.z),
+		};
+	});
+	return { frames, values };
+}
+
+function fcurveContainerAt(node, candidates) {
+	for (const candidate of candidates) {
+		const found = find(node, candidate);
+		if (found && find(found, "Keys")) {
+			return found;
+		}
+	}
+	return null;
+}
+
+function uvPayload(node, warnings, nodeName) {
+	const uvType = intAt(node, "RendererCommonValues/UV", 0);
+	if (uvType === 0) {
+		return null;
+	}
+	const base = find(node, "RendererCommonValues");
+	if (!base) {
+		return null;
+	}
+
+	if (uvType === 1) {
+		return {
+			type: 1,
+			start: { x: numberAt(base, "UVFixed/Start/X", 0), y: numberAt(base, "UVFixed/Start/Y", 0) },
+			size: { x: numberAt(base, "UVFixed/Size/X", 0), y: numberAt(base, "UVFixed/Size/Y", 0) },
+		};
+	}
+
+	if (uvType === 2) {
+		const animation = find(base, "UVAnimation/AnimationParams") || find(base, "UVAnimation");
+		if (!animation) {
+			return null;
+		}
+		// FrameLength is an IntWithInfinite in newer saves (nested Value element) and plain text in older ones.
+		const directFrameLength = textAt(animation, "FrameLength");
+		const frameLength = directFrameLength != null && Number.isFinite(Number(directFrameLength))
+			? Number(directFrameLength)
+			: numberAt(animation, "FrameLength/Value", 1);
+		return {
+			type: 2,
+			start: { x: numberAt(animation, "Start/X", 0), y: numberAt(animation, "Start/Y", 0) },
+			size: { x: numberAt(animation, "Size/X", 0), y: numberAt(animation, "Size/Y", 0) },
+			animation: {
+				frameLength: Math.max(1, frameLength),
+				countX: Math.max(1, intAt(animation, "FrameCountX", 1)),
+				countY: Math.max(1, intAt(animation, "FrameCountY", 1)),
+				loopType: intAt(animation, "LoopType", 0),
+				startSheet: intAt(animation, "StartSheet", 0),
+			},
+		};
+	}
+
+	if (uvType === 3) {
+		return {
+			type: 3,
+			start: {
+				x: randomNumberAt(base, "UVScroll/Start/X", 0).center,
+				y: randomNumberAt(base, "UVScroll/Start/Y", 0).center,
+			},
+			size: {
+				x: randomNumberAt(base, "UVScroll/Size/X", 0).center,
+				y: randomNumberAt(base, "UVScroll/Size/Y", 0).center,
+			},
+			scroll: {
+				speed: {
+					x: randomNumberAt(base, "UVScroll/Speed/X", 0).center,
+					y: randomNumberAt(base, "UVScroll/Speed/Y", 0).center,
+				},
+			},
+		};
+	}
+
+	warnings.push(warning("uv_unsupported", `UV type ${uvType} (FCurve) is not supported; default UVs are used.`, nodeName));
+	return null;
+}
+
+function rangeIsZero(range) {
+	for (const key of ["center", "min", "max"]) {
+		const vector = range[key] || {};
+		if (Math.abs(vector.x || 0) > 1e-9 || Math.abs(vector.y || 0) > 1e-9 || Math.abs(vector.z || 0) > 1e-9) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function spawnPayload(node, warnings, nodeName) {
+	const base = find(node, "GenerationLocationValues");
+	if (!base) {
+		return null;
+	}
+	const spawnType = intAt(base, "Type", 0);
+	const effectsRotation = boolAt(base, "EffectsRotation", false);
+
+	if (spawnType === 0) {
+		// Point offsets are merged into transform.positionRange by convertNode, so no payload is needed.
+		const location = randomVectorAt(base, "Point/Location", { x: 0, y: 0, z: 0 });
+		if (rangeIsZero(location)) {
+			return null;
+		}
+		return { type: 0, effectsRotation, point: { location } };
+	}
+
+	if (spawnType === 1) {
+		return {
+			type: 1,
+			effectsRotation,
+			sphere: {
+				radius: randomNumberAt(base, "Sphere/Radius", 0),
+				rotationX: randomNumberAt(base, "Sphere/RotationX", 0),
+				rotationY: randomNumberAt(base, "Sphere/RotationY", 0),
+			},
+		};
+	}
+
+	if (spawnType === 3) {
+		return {
+			type: 3,
+			effectsRotation,
+			circle: {
+				radius: randomNumberAt(base, "Circle/Radius", 0),
+				axis: intAt(base, "Circle/AxisDirection", 2),
+				division: Math.max(1, intAt(base, "Circle/Division", 8)),
+				angleStart: randomNumberAt(base, "Circle/AngleStart", 0),
+				angleEnd: randomNumberAt(base, "Circle/AngleEnd", 360),
+				angleNoise: randomNumberAt(base, "Circle/AngleNoize", 0),
+				order: intAt(base, "Circle/Type", 0),
+			},
+		};
+	}
+
+	if (spawnType === 4) {
+		return {
+			type: 4,
+			effectsRotation,
+			line: {
+				from: randomVectorAt(base, "Line/PositionStart", { x: 0, y: 0, z: 0 }),
+				to: randomVectorAt(base, "Line/PositionEnd", { x: 0, y: 0, z: 0 }),
+				division: Math.max(1, intAt(base, "Line/Division", 8)),
+				noise: randomNumberAt(base, "Line/PositionNoize", 0),
+				order: intAt(base, "Line/Type", 0),
+			},
+		};
+	}
+
+	warnings.push(warning("spawn_unsupported", `Generation location type ${spawnType} is not supported; point emission is used.`, nodeName));
+	return null;
+}
+
+function soundPayload(node, context, nodeName) {
+	const base = find(node, "SoundValues");
+	if (!base || intAt(base, "Type", 0) !== 1) {
+		return null;
+	}
+	const wave = textAt(base, "Sound/Wave");
+	if (!wave) {
+		return null;
+	}
+
+	context.dependencies.sounds.add(wave);
+	const asset = context.resolveAsset(wave);
+	if (!asset) {
+		context.warnings.push(warning("sound_unmapped", `No Roblox asset id mapped for sound '${wave}'.`, nodeName));
+	}
+	return {
+		wave,
+		asset,
+		volume: randomNumberAt(base, "Sound/Volume", 1),
+		pitch: randomNumberAt(base, "Sound/Pitch", 0),
+		delay: randomNumberAt(base, "Sound/Delay", 0),
+	};
+}
+
+const LOCAL_FORCE_FIELD_NAMES = {
+	1: "Turbulence",
+	2: "Force",
+	3: "Wind",
+	4: "Vortex",
+	7: "Drag",
+	9: "AttractiveForce",
+};
+
+function fieldAcceleration(node, warnings, nodeName) {
+	let acceleration = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
+	const abs = find(node, "LocationAbsValues");
+	if (!abs) {
+		return acceleration;
+	}
+
+	// Legacy (pre-1.6) layout: Type selects None(0)/Gravity(1)/AttractiveForce(2).
+	const legacyType = intAt(abs, "Type", find(abs, "Gravity") ? 1 : 0);
+	if (legacyType === 1 && find(abs, "Gravity")) {
+		acceleration = addVectorRanges(acceleration, randomVectorAt(abs, "Gravity/Gravity", { x: 0, y: 0, z: 0 }));
+	} else if (legacyType === 2) {
+		warnings.push(warning("force_field_unsupported", "Attractive force is not supported by the Roblox runtime.", nodeName));
+	}
+
+	// Modern (1.6+) layout: up to four LocalForceField slots.
+	for (let index = 1; index <= 4; index++) {
+		const field = find(abs, `LocalForceField${index}`);
+		if (!field) {
+			continue;
+		}
+		const fieldType = intAt(field, "Type", 0);
+		if (fieldType === 0) {
+			continue;
+		}
+		if (fieldType === 8) {
+			const power = numberAt(field, "Power", 1);
+			acceleration = addVectorRanges(
+				acceleration,
+				scaleVectorRange(randomVectorAt(field, "Gravity/Gravity", { x: 0, y: 0, z: 0 }), power),
+			);
+			continue;
+		}
+		warnings.push(
+			warning(
+				"force_field_unsupported",
+				`Local force field '${LOCAL_FORCE_FIELD_NAMES[fieldType] || fieldType}' is not supported by the Roblox runtime.`,
+				nodeName,
+			),
+		);
+	}
+	return acceleration;
+}
+
 function colorAt(node, candidates) {
 	for (const xmlPath of candidates) {
 		const base = find(node, xmlPath);
@@ -422,7 +765,38 @@ function fadeFrameAt(node, name) {
 	return numberAt(node, `RendererCommonValues/${name}/Frame`, 0);
 }
 
-function colorPayload(node) {
+function colorPayload(node, warnings, nodeName) {
+	// Effekseer 1.5+ saves Sprite/Model colors as a StandardColor at DrawingValues/ColorAll.
+	const standard = find(node, "DrawingValues/ColorAll");
+	if (standard && standard.children.length) {
+		const mode = intAt(standard, "Type", 0);
+		const fixed = colorAt(node, ["DrawingValues/ColorAll/Fixed"]);
+		if (mode === 2 && find(standard, "Easing")) {
+			const start = colorRangeAt(standard, "Easing/Start", fixed);
+			const end = colorRangeAt(standard, "Easing/End", start);
+			return {
+				color: start,
+				colorOverLife: { start, finish: end },
+			};
+		}
+		if (mode === 1 && find(standard, "Random")) {
+			return {
+				color: colorRangeAt(standard, "Random", fixed),
+				colorOverLife: null,
+			};
+		}
+		if (mode === 3 || mode === 4) {
+			warnings.push(
+				warning(
+					"color_unsupported",
+					`Color mode ${mode === 3 ? "FCurve" : "Gradient"} is approximated with a fixed color.`,
+					nodeName,
+				),
+			);
+		}
+		return { color: fixed, colorOverLife: null };
+	}
+
 	const rendererNames = ["Sprite", "Ribbon", "Ring", "Track", "Model"];
 	for (const rendererName of rendererNames) {
 		const basePath = `DrawingValues/${rendererName}`;
@@ -592,7 +966,16 @@ function generationOffset(node) {
 
 function nodeLife(node) {
 	const common = find(node, "CommonValues");
-	return common ? randomNumberAt(common, "Life", 100) : { center: 100, min: 100, max: 100 };
+	const life = common ? randomNumberAt(common, "Life", 100) : { center: 100, min: 100, max: 100 };
+	if (common) {
+		// Modern saves nest removal flags under Removal; legacy saves keep flat RemoveWhen* elements.
+		const removalNested = boolAt(common, "Removal/WhenLifeIsExtinct", true);
+		const removalLegacy = boolAt(common, "RemoveWhenLifeIsExtinct", true);
+		if (!removalNested || !removalLegacy) {
+			life.infinite = true;
+		}
+	}
+	return life;
 }
 
 function maxGeneration(node) {
@@ -612,6 +995,7 @@ function locationPayload(node, warnings, nodeName, life) {
 	let positionRange = vectorRangeFromVector(position);
 	let velocity = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let acceleration = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
+	let positionKeys = null;
 
 	if (locationType === 0) {
 		position = fixedVectorAt(node, "LocationValues/Fixed/Location", { x: 0, y: 0, z: 0 });
@@ -628,20 +1012,39 @@ function locationPayload(node, warnings, nodeName, life) {
 		positionRange = start;
 		velocity = vectorVelocityFromRanges(start, finish, Math.max(1, life.center || 1));
 	} else if (locationType === 3) {
-		warnings.push(warning("location_fcurve", "Location FCurve is not evaluated by the Roblox runtime yet.", nodeName));
+		const container = fcurveContainerAt(node, [
+			"LocationValues/LocationFCurve/FCurve",
+			"LocationValues/FCurve/FCurve",
+			"LocationValues/LocationFCurve",
+			"LocationValues/FCurve",
+		]);
+		const baked = container ? bakeFCurveVector(container, life, { x: 0, y: 0, z: 0 }) : null;
+		if (baked) {
+			positionKeys = baked;
+			position = baked.values[0];
+			positionRange = vectorRangeFromVector(position);
+			const last = baked.values[baked.values.length - 1];
+			const frames = Math.max(1, baked.frames[baked.frames.length - 1] - baked.frames[0]);
+			velocity = vectorRangeFromVector(divideVector(subtractVectors(last, position), frames));
+			warnings.push(
+				warning("location_fcurve", "Location FCurve is approximated with baked linear samples.", nodeName),
+			);
+		} else {
+			warnings.push(
+				warning("location_fcurve", "Location FCurve keys could not be read; the node stays at its origin.", nodeName),
+			);
+		}
 	} else {
 		warnings.push(warning("location_unsupported", `Location type ${locationType} is not supported.`, nodeName));
 	}
 
-	acceleration = addVectorRanges(
-		acceleration,
-		randomVectorAt(node, "LocationAbsValues/Gravity/Gravity", { x: 0, y: 0, z: 0 }),
-	);
+	acceleration = addVectorRanges(acceleration, fieldAcceleration(node, warnings, nodeName));
 
 	return {
 		type: locationType,
 		position,
 		positionRange,
+		positionKeys,
 		velocity,
 		acceleration,
 		emissionDirection: dominantDirection(velocity.center),
@@ -649,12 +1052,13 @@ function locationPayload(node, warnings, nodeName, life) {
 	};
 }
 
-function rotationPayload(node, life) {
+function rotationPayload(node, life, warnings, nodeName) {
 	const rotationType = intAt(node, "RotationValues/Type", 0);
 	let rotation = { center: 0, min: 0, max: 0 };
 	let speed = { center: 0, min: 0, max: 0 };
 	let rotation3 = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let speed3 = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
+	let rotationKeys = null;
 
 	if (rotationType === 0) {
 		const fixed = fixedVectorAt(node, "RotationValues/Fixed/Rotation", { x: 0, y: 0, z: 0 });
@@ -684,21 +1088,67 @@ function rotationPayload(node, life) {
 	} else if (rotationType === 3) {
 		rotation = randomNumberAt(node, "RotationValues/AxisPVA/Rotation", 0);
 		speed = randomNumberAt(node, "RotationValues/AxisPVA/Velocity", 0);
+	} else if (rotationType === 4) {
+		rotation = randomNumberAt(node, "RotationValues/AxisEasing/Easing/Start", 0);
+		const finish = randomNumberAt(node, "RotationValues/AxisEasing/Easing/End", rotation.center);
+		speed = numberVelocityFromRanges(rotation, finish, Math.max(1, life.center || 1));
+	} else if (rotationType === 5) {
+		const container = fcurveContainerAt(node, [
+			"RotationValues/RotationFCurve/FCurve",
+			"RotationValues/FCurve/FCurve",
+			"RotationValues/RotationFCurve",
+		]);
+		const baked = container ? bakeFCurveVector(container, life, { x: 0, y: 0, z: 0 }) : null;
+		if (baked) {
+			rotationKeys = baked;
+			const first = baked.values[0];
+			const last = baked.values[baked.values.length - 1];
+			const frames = Math.max(1, baked.frames[baked.frames.length - 1] - baked.frames[0]);
+			const averageSpeed = divideVector(subtractVectors(last, first), frames);
+			rotation3 = vectorRangeFromVector(first);
+			speed3 = vectorRangeFromVector(averageSpeed);
+			rotation = { center: first.z, min: first.z, max: first.z };
+			speed = { center: averageSpeed.z, min: averageSpeed.z, max: averageSpeed.z };
+			warnings.push(
+				warning("rotation_fcurve", "Rotation FCurve is approximated with baked linear samples.", nodeName),
+			);
+		} else {
+			warnings.push(
+				warning("rotation_fcurve", "Rotation FCurve keys could not be read; fixed rotation is used.", nodeName),
+			);
+		}
+	} else if (rotationType === 6 || rotationType === 7) {
+		warnings.push(
+			warning(
+				"rotation_unsupported",
+				`Rotation type ${rotationType === 6 ? "RotateToViewpoint" : "RotateToVelocity"} is not supported.`,
+				nodeName,
+			),
+		);
 	}
 
-	return { type: rotationType, rotation, speed, rotation3, speed3 };
+	return { type: rotationType, rotation, speed, rotation3, speed3, rotationKeys };
 }
 
-function scalePayload(node, life) {
+function scalePayload(node, life, warnings, nodeName) {
 	const scaleType = intAt(node, "ScalingValues/Type", 0);
 	let start = 1;
 	let finish = 1;
 	let envelope = 0;
+	let startVector = { x: 1, y: 1, z: 1 };
+	let finishVector = { x: 1, y: 1, z: 1 };
+	let pva = null;
+	let easing = null;
+	let singlePva = null;
+	let singleEasing = null;
+	let scaleKeys = null;
 
 	if (scaleType === 0) {
 		const scale = fixedVectorAt(node, "ScalingValues/Fixed/Scale", { x: 1, y: 1, z: 1 });
 		start = Math.max(0, averageXY(scale));
 		finish = start;
+		startVector = scaleVector(scale);
+		finishVector = startVector;
 	} else if (scaleType === 1) {
 		const base = randomVectorAt(node, "ScalingValues/PVA/Scale", { x: 1, y: 1, z: 1 });
 		const velocity = randomVectorAt(node, "ScalingValues/PVA/Velocity", { x: 0, y: 0, z: 0 });
@@ -707,8 +1157,12 @@ function scalePayload(node, life) {
 		start = Math.max(0, averageXY(base.center));
 		const endX = base.center.x + velocity.center.x * lifeFrames + 0.5 * acceleration.center.x * lifeFrames * lifeFrames;
 		const endY = base.center.y + velocity.center.y * lifeFrames + 0.5 * acceleration.center.y * lifeFrames * lifeFrames;
+		const endZ = base.center.z + velocity.center.z * lifeFrames + 0.5 * acceleration.center.z * lifeFrames * lifeFrames;
 		finish = Math.max(0, (Math.abs(endX) + Math.abs(endY)) * 0.5);
 		envelope = Math.max(0, (base.max.x - base.min.x + base.max.y - base.min.y) * 0.25);
+		startVector = scaleVector(base.center);
+		finishVector = scaleVector({ x: endX, y: endY, z: endZ });
+		pva = { scale: base, velocity, acceleration };
 	} else if (scaleType === 2) {
 		const startRange = randomVectorAt(node, "ScalingValues/Easing/Start", { x: 1, y: 1, z: 1 });
 		const finishRange = randomVectorAt(node, "ScalingValues/Easing/End", startRange.center);
@@ -720,6 +1174,9 @@ function scalePayload(node, life) {
 				+ finishRange.max.x - finishRange.min.x + finishRange.max.y - finishRange.min.y)
 				* 0.125,
 		);
+		startVector = scaleVector(startRange.center);
+		finishVector = scaleVector(finishRange.center);
+		easing = { start: startRange, finish: finishRange };
 	} else if (scaleType === 3) {
 		const base = randomNumberAt(node, "ScalingValues/SinglePVA/Scale", 1);
 		const velocity = randomNumberAt(node, "ScalingValues/SinglePVA/Velocity", 0);
@@ -728,18 +1185,57 @@ function scalePayload(node, life) {
 		start = Math.max(0, Math.abs(base.center));
 		finish = Math.max(0, Math.abs(base.center + velocity.center * lifeFrames + 0.5 * acceleration.center * lifeFrames * lifeFrames));
 		envelope = Math.max(0, (base.max - base.min) * 0.5);
+		startVector = singleScaleVector(base.center);
+		finishVector = singleScaleVector(base.center + velocity.center * lifeFrames + 0.5 * acceleration.center * lifeFrames * lifeFrames);
+		singlePva = { scale: base, velocity, acceleration };
 	} else if (scaleType === 4) {
 		const startRange = randomNumberAt(node, "ScalingValues/SingleEasing/Start", 1);
 		const finishRange = randomNumberAt(node, "ScalingValues/SingleEasing/End", startRange.center);
 		start = Math.max(0, Math.abs(startRange.center));
 		finish = Math.max(0, Math.abs(finishRange.center));
 		envelope = Math.max(0, Math.max(startRange.max - startRange.min, finishRange.max - finishRange.min) * 0.5);
+		startVector = singleScaleVector(startRange.center);
+		finishVector = singleScaleVector(finishRange.center);
+		singleEasing = { start: startRange, finish: finishRange };
+	} else if (scaleType === 5 || scaleType === 6) {
+		const container = scaleType === 5
+			? fcurveContainerAt(node, ["ScalingValues/FCurve/FCurve", "ScalingValues/FCurve"])
+			: fcurveContainerAt(node, ["ScalingValues/SingleFCurve/FCurve", "ScalingValues/SingleFCurve"]);
+		const baked = container ? bakeFCurveVector(container, life, { x: 1, y: 1, z: 1 }) : null;
+		if (baked) {
+			scaleKeys = baked;
+			const first = baked.values[0];
+			const last = baked.values[baked.values.length - 1];
+			start = Math.max(0, averageXY(first));
+			finish = Math.max(0, averageXY(last));
+			startVector = scaleVector(first);
+			finishVector = scaleVector(last);
+			warnings.push(
+				warning("scaling_fcurve", "Scaling FCurve is approximated with baked linear samples.", nodeName),
+			);
+		} else {
+			warnings.push(
+				warning("scaling_fcurve", "Scaling FCurve keys could not be read; scale 1 is used.", nodeName),
+			);
+		}
 	}
 
 	if (!Number.isFinite(finish)) {
 		finish = Number.isFinite(start) ? start : 1;
 	}
-	return { type: scaleType, start, finish, envelope };
+	return {
+		type: scaleType,
+		start,
+		finish,
+		envelope,
+		startVector,
+		finishVector,
+		pva,
+		easing,
+		singlePva,
+		singleEasing,
+		scaleKeys,
+	};
 }
 
 function texturePathFor(node) {
@@ -757,12 +1253,67 @@ function modelPathFor(node) {
 	return textAt(node, "DrawingValues/Model/Model") || "";
 }
 
-function visualPayload(node, rendererType, modelPath, modelAsset) {
+function spritePositionPayload(node) {
+	if (intAt(node, "DrawingValues/Sprite/Position", 0) !== 1) {
+		return null;
+	}
+
+	const points = [
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_LL", { x: -0.5, y: -0.5, z: 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_LR", { x: 0.5, y: -0.5, z: 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_UL", { x: -0.5, y: 0.5, z: 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_UR", { x: 0.5, y: 0.5, z: 0 }),
+	];
+	const xs = points.map((point) => point.x || 0);
+	const ys = points.map((point) => point.y || 0);
+	const minX = Math.min(...xs);
+	const maxX = Math.max(...xs);
+	const minY = Math.min(...ys);
+	const maxY = Math.max(...ys);
+
+	return {
+		center: {
+			x: (minX + maxX) * 0.5,
+			y: (minY + maxY) * 0.5,
+		},
+		size: {
+			x: Math.max(0.01, maxX - minX),
+			y: Math.max(0.01, maxY - minY),
+		},
+	};
+}
+
+function ringRadiusPayload(ringNode, name, defaultValue, life) {
+	if (!ringNode) {
+		return { start: defaultValue, finish: defaultValue };
+	}
+	const radiusType = intAt(ringNode, name, 0);
+	if (radiusType === 1) {
+		const location = randomNumberAt(ringNode, `${name}_PVA/Location/X`, defaultValue);
+		const velocity = randomNumberAt(ringNode, `${name}_PVA/Velocity/X`, 0);
+		const acceleration = randomNumberAt(ringNode, `${name}_PVA/Acceleration/X`, 0);
+		const frames = Math.max(1, life.center || 1);
+		return {
+			start: location.center,
+			finish: location.center + velocity.center * frames + 0.5 * acceleration.center * frames * frames,
+		};
+	}
+	if (radiusType === 2) {
+		const start = randomNumberAt(ringNode, `${name}_Easing/Start/X`, defaultValue);
+		const finish = randomNumberAt(ringNode, `${name}_Easing/End/X`, start.center);
+		return { start: start.center, finish: finish.center };
+	}
+	const fixed = numberAt(ringNode, `${name}_Fixed/Location/X`, defaultValue);
+	return { start: fixed, finish: fixed };
+}
+
+function visualPayload(node, rendererType, modelPath, modelAsset, life) {
 	const size = {};
 
 	if (rendererType === "Sprite") {
 		size.sprite = {
 			billboard: intAt(node, "DrawingValues/Sprite/Billboard", 0),
+			position: spritePositionPayload(node),
 		};
 	} else if (rendererType === "Ribbon") {
 		const left = numberAt(node, "DrawingValues/Ribbon/Position_Fixed_L", -0.5);
@@ -781,12 +1332,16 @@ function visualPayload(node, rendererType, modelPath, modelAsset) {
 			length: Math.max(0.25, Math.abs(front - back) || width * 8),
 		};
 	} else if (rendererType === "Ring") {
-		const outer = numberAt(node, "DrawingValues/Ring/Outer_Fixed/Location/X", 1);
-		const inner = numberAt(node, "DrawingValues/Ring/Inner_Fixed/Location/X", 0);
+		const ring = find(node, "DrawingValues/Ring");
+		const outer = ringRadiusPayload(ring, "Outer", 1, life);
+		const inner = ringRadiusPayload(ring, "Inner", 0, life);
 		size.ring = {
 			vertexCount: intAt(node, "DrawingValues/Ring/VertexCount", 32),
-			outerRadius: Math.max(0.01, Math.abs(outer || 1)),
-			innerRadius: Math.max(0, Math.abs(inner || 0)),
+			outerRadius: Math.max(0.01, Math.abs(outer.start || 1)),
+			innerRadius: Math.max(0, Math.abs(inner.start || 0)),
+			outerRadiusFinish: Math.max(0.01, Math.abs(outer.finish || outer.start || 1)),
+			innerRadiusFinish: Math.max(0, Math.abs(inner.finish || 0)),
+			billboard: intAt(node, "DrawingValues/Ring/Billboard", 0),
 		};
 	} else if (rendererType === "Model") {
 		size.model = {
@@ -834,7 +1389,7 @@ function convertNode(node, context, idPrefix) {
 	const rendererType = rendererTypeFor(node);
 	let rendered = boolAt(node, "IsRendered", true) && rendererType !== "None";
 	const life = nodeLife(node);
-	const color = colorPayload(node);
+	const color = colorPayload(node, context.warnings, nodeName);
 	const texturePath = texturePathFor(node);
 	const texture = context.resolveTexture(texturePath);
 	const modelPath = rendererType === "Model" ? modelPathFor(node) : "";
@@ -859,7 +1414,43 @@ function convertNode(node, context, idPrefix) {
 		context.warnings.push(warning("model_unmapped", `No Roblox asset id mapped for model '${modelPath}'. A placeholder part will be used.`, nodeName));
 	}
 
+	const uv = rendered ? uvPayload(node, context.warnings, nodeName) : null;
+	let spawn = spawnPayload(node, context.warnings, nodeName);
+	const sound = soundPayload(node, context, nodeName);
+	const alphaBlend = alphaBlendAt(node);
+
+	if (rendered) {
+		const materialType = intAt(node, "RendererCommonValues/Material", 0);
+		if (materialType === 6 || boolAt(node, "RendererCommonValues/Distortion", false)) {
+			context.warnings.push(
+				warning("distortion_unsupported", "Background distortion is rendered as a plain texture.", nodeName),
+			);
+		} else if (materialType === 128) {
+			context.warnings.push(
+				warning("material_unsupported", "Custom material files are not supported; textures may be missing.", nodeName),
+			);
+		} else if (materialType === 7) {
+			context.warnings.push(
+				warning("material_unsupported", "Lighting material is approximated with unlit rendering.", nodeName),
+			);
+		}
+		if (alphaBlend === 3 || alphaBlend === 4) {
+			context.warnings.push(
+				warning(
+					"blend_unsupported",
+					`${alphaBlend === 3 ? "Subtract" : "Multiply"} blending is approximated with normal blending.`,
+					nodeName,
+				),
+			);
+		}
+	}
+
 	const location = locationPayload(node, context.warnings, nodeName, life);
+	if (spawn && spawn.type === 0 && spawn.point) {
+		location.position = addVectors(location.position, spawn.point.location.center);
+		location.positionRange = addVectorRanges(location.positionRange, spawn.point.location);
+		spawn = null;
+	}
 	let speedMin = vectorMagnitude(location.velocity.min);
 	let speedMax = vectorMagnitude(location.velocity.max);
 	if (speedMin > speedMax) {
@@ -876,13 +1467,16 @@ function convertNode(node, context, idPrefix) {
 		rendered,
 		texturePath,
 		texture,
-		alphaBlend: alphaBlendAt(node),
+		alphaBlend,
 		zTest: boolAt(node, "RendererCommonValues/ZTest", true),
 		fadeIn: fadeFrameAt(node, "FadeIn"),
 		fadeOut: fadeFrameAt(node, "FadeOut"),
 		color: color.color,
 		colorOverLife: color.colorOverLife,
-		visual: visualPayload(node, rendererType, modelPath, modelAsset),
+		uv,
+		spawn,
+		sound,
+		visual: visualPayload(node, rendererType, modelPath, modelAsset, life),
 		life,
 		generation: {
 			max: maxGeneration(node),
@@ -892,13 +1486,14 @@ function convertNode(node, context, idPrefix) {
 		transform: {
 			position: location.position,
 			positionRange: location.positionRange,
+			positionKeys: location.positionKeys,
 			velocity: location.velocity,
 			acceleration: location.acceleration,
 			speed: { min: speedMin, max: speedMax },
 			emissionDirection: location.emissionDirection,
 			spreadAngle: location.spreadAngle,
-			rotation: rotationPayload(node, life),
-			size: scalePayload(node, life),
+			rotation: rotationPayload(node, life, context.warnings, nodeName),
+			size: scalePayload(node, life, context.warnings, nodeName),
 		},
 		children: childNodes.map((childNode, index) => convertNode(childNode, context, `${idPrefix}_${index + 1}`)),
 	};
@@ -915,6 +1510,7 @@ function convertProject(inputPath, options = {}) {
 		dependencies: {
 			textures: new Set(),
 			models: new Set(),
+			sounds: new Set(),
 		},
 		resolveTexture: createTextureResolver(
 			inputPath,
@@ -936,7 +1532,7 @@ function convertProject(inputPath, options = {}) {
 
 	return {
 		format: "EffekseerRobloxEffect",
-		formatVersion: 1,
+		formatVersion: 2,
 		name: options.moduleName || path.basename(inputPath, path.extname(inputPath)),
 		source: normalizePath(path.relative(process.cwd(), inputPath)),
 		frameRate: options.frameRate || 60,
@@ -949,6 +1545,7 @@ function convertProject(inputPath, options = {}) {
 		dependencies: {
 			textures: Array.from(context.dependencies.textures).sort(),
 			models: Array.from(context.dependencies.models).sort(),
+			sounds: Array.from(context.dependencies.sounds).sort(),
 		},
 		warnings: context.warnings,
 		nodes,

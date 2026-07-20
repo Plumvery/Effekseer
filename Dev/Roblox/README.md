@@ -6,13 +6,22 @@ The bridge converts `.efkproj` or `.efkefc` files into Luau ModuleScripts and pl
 
 ## Renderer support
 
-- `Sprite`: Roblox `ParticleEmitter`
-- `Ring`: Roblox `ParticleEmitter` with disc-shaped emission when available, plus a fallback preview texture for textureless rings
-- `Ribbon`: Roblox `Beam`
-- `Track`: Roblox `Beam`
-- `Model`: Roblox `MeshPart` when a model asset is mapped, otherwise a visible placeholder part for preview
+- `Sprite`: Roblox `ParticleEmitter`, or per-particle quads (SurfaceGui/Decal parts) when UV cropping, sheet animation, or fixed orientation requires it
+- `Ring`: Roblox `ParticleEmitter` with the ring radius (including Outer/Inner PVA and easing animation) folded into the particle size; fixed-orientation rings render as quads so shockwaves lie flat
+- `Ribbon` / `Track`: a moving tracer with a Roblox `Trail` when the node moves its particles, otherwise a static `Beam`
+- `Model`: Roblox `MeshPart` when a model asset is mapped, otherwise a placeholder part; position/rotation/scale/color animate over the node's lifetime
 
-Effekseer curves, UV animation, and native model geometry are still approximated. The goal of this bridge is reliable Roblox Studio preview and Rojo/Argon-friendly generated Luau first, then incremental visual parity.
+Converter feature coverage:
+
+- UV `Fixed` / `Animation` / `Scroll` (sheet animations map to Roblox flipbooks when they are square 2x2/4x4/8x8 grids; other layouts render through animated quads)
+- Generation locations `Point` / `Sphere` / `Circle` / `Line` (Model-surface spawning is unsupported and warned)
+- Location / rotation / scaling FCurves are baked into linear key samples at conversion time
+- Legacy `LocationAbsValues` gravity and Effekseer 1.6+ `LocalForceField` gravity; other force fields warn
+- Effekseer 1.5+ `DrawingValues/ColorAll` StandardColor (Fixed / Random / Easing; FCurve and Gradient fall back to fixed with a warning)
+- Node sounds (`SoundValues`) convert to Roblox `Sound` playback when a sound asset id is mapped
+- "Delete when life expires = off" nodes live for the whole effect timeline
+
+Unsupported features (distortion, custom materials, subtract/multiply blending, attractive force, RotateToViewpoint/Velocity, UV FCurve, model-surface spawning) are reported in the conversion warnings instead of being silently dropped. Remaining approximations: per-parent-particle child emission only applies on the quad path, and easing interpolation curves (StartSpeed/EndSpeed) are linearized.
 
 ## Requirements
 

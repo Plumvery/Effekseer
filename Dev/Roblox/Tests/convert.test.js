@@ -427,11 +427,27 @@ test("converts transform easing, gravity, and billboard metadata", () => {
   </ScalingValues>
   <Name>single-scale</Name>
   <Children />
+</Node>
+<Node>
+  <CommonValues>
+    <MaxGeneration><Value>1</Value></MaxGeneration>
+    <Life><Center>10</Center></Life>
+  </CommonValues>
+  <ScalingValues>
+    <Type>1</Type>
+    <PVA>
+      <Scale><X><Center>0</Center><Min>-1</Min></X><Y><Center>0</Center><Min>-1</Min></Y></Scale>
+      <Velocity><X><Center>0.1</Center><Min>-0.1</Min><Max>0.2</Max></X></Velocity>
+    </PVA>
+  </ScalingValues>
+  <Name>pva-scale</Name>
+  <Children />
 </Node>`);
 	const { projectPath } = writeTempProject(project, "effekseer-roblox-transform-easing-");
 	const effect = convertProject(projectPath);
 	const eased = effect.nodes[0];
 	const singleScale = effect.nodes[1];
+	const pvaScale = effect.nodes[2];
 
 	assert.strictEqual(countWarnings(effect, "location_easing"), 0);
 	assert.deepStrictEqual(eased.transform.position, { x: 0, y: 0, z: 0 });
@@ -444,9 +460,15 @@ test("converts transform easing, gravity, and billboard metadata", () => {
 	assert.strictEqual(eased.transform.rotation.speed3.center.z, 3);
 	assert.strictEqual(eased.transform.size.start, 3);
 	assert.strictEqual(eased.transform.size.finish, 0);
+	assert.deepStrictEqual(eased.transform.size.startVector, { x: 2, y: 4, z: 1 });
+	assert.deepStrictEqual(eased.transform.size.finishVector, { x: 0, y: 0, z: 1 });
 	assert.strictEqual(eased.visual.sprite.billboard, 1);
 	assert.strictEqual(singleScale.transform.size.start, 0.5);
 	assert.strictEqual(singleScale.transform.size.finish, 2);
+	assert.deepStrictEqual(singleScale.transform.size.startVector, { x: 0.5, y: 0.5, z: 0.5 });
+	assert.deepStrictEqual(singleScale.transform.size.finishVector, { x: 2, y: 2, z: 2 });
+	assert.strictEqual(pvaScale.transform.size.pva.scale.min.x, -1);
+	assert.strictEqual(pvaScale.transform.size.pva.velocity.max.x, 0.2);
 });
 
 test("keeps supported renderer nodes and emits renderer-specific visual payloads", () => {
@@ -487,6 +509,44 @@ test("keeps supported renderer nodes and emits renderer-specific visual payloads
 	assert(effect.nodes[4].visual.beam);
 });
 
+test("preserves sprite and ring billboard modes", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <DrawingValues>
+    <Type>2</Type>
+    <Sprite>
+      <Billboard>3</Billboard>
+      <Position>1</Position>
+      <Position_Fixed_LL><X>-0.25</X><Y>-0.2</Y></Position_Fixed_LL>
+      <Position_Fixed_LR><X>0.75</X><Y>-0.2</Y></Position_Fixed_LR>
+      <Position_Fixed_UL><X>-0.25</X><Y>0.8</Y></Position_Fixed_UL>
+      <Position_Fixed_UR><X>0.75</X><Y>0.8</Y></Position_Fixed_UR>
+    </Sprite>
+  </DrawingValues>
+  <Name>rotated-sprite</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <DrawingValues>
+    <Type>4</Type>
+    <Ring><Billboard>1</Billboard></Ring>
+  </DrawingValues>
+  <Name>y-fixed-ring</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-billboard-modes-");
+	const effect = convertProject(projectPath);
+
+	assert.strictEqual(effect.nodes[0].visual.sprite.billboard, 3);
+	assert.deepStrictEqual(effect.nodes[0].visual.sprite.position, {
+		center: { x: 0.25, y: 0.30000000000000004 },
+		size: { x: 1, y: 1 },
+	});
+	assert.strictEqual(effect.nodes[1].visual.ring.billboard, 1);
+});
+
 test("preserves node hierarchy and child effect ids", () => {
 	const project = createProject(`
 <Node>
@@ -509,6 +569,392 @@ test("preserves node hierarchy and child effect ids", () => {
 	assert.strictEqual(effect.nodes[0].rendered, false);
 	assert.strictEqual(effect.nodes[0].children[0].id, "1_1");
 	assert.strictEqual(effect.nodes[0].children[0].texture, "rbxassetid://789");
+});
+
+test("parses UV fixed, animation, and scroll payloads and warns on UV FCurve", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues>
+    <UV>1</UV>
+    <UVFixed>
+      <Start><X>64</X><Y>32</Y></Start>
+      <Size><X>128</X><Y>128</Y></Size>
+    </UVFixed>
+  </RendererCommonValues>
+  <Name>uv-fixed</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues>
+    <UV>2</UV>
+    <UVAnimation>
+      <Start><X>0</X><Y>0</Y></Start>
+      <Size><X>64</X><Y>64</Y></Size>
+      <FrameLength>3</FrameLength>
+      <FrameCountX>4</FrameCountX>
+      <FrameCountY>4</FrameCountY>
+      <LoopType>1</LoopType>
+    </UVAnimation>
+  </RendererCommonValues>
+  <Name>uv-anim</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues>
+    <UV>3</UV>
+    <UVScroll>
+      <Size><X>256</X><Y>256</Y></Size>
+      <Speed><Y>-16</Y></Speed>
+    </UVScroll>
+  </RendererCommonValues>
+  <Name>uv-scroll</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues><UV>4</UV></RendererCommonValues>
+  <Name>uv-fcurve</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-uv-");
+	const effect = convertProject(projectPath);
+
+	assert.deepStrictEqual(effect.nodes[0].uv, {
+		type: 1,
+		start: { x: 64, y: 32 },
+		size: { x: 128, y: 128 },
+	});
+	assert.strictEqual(effect.nodes[1].uv.type, 2);
+	assert.deepStrictEqual(effect.nodes[1].uv.animation, {
+		frameLength: 3,
+		countX: 4,
+		countY: 4,
+		loopType: 1,
+		startSheet: 0,
+	});
+	assert.strictEqual(effect.nodes[2].uv.type, 3);
+	assert.strictEqual(effect.nodes[2].uv.scroll.speed.y, -16);
+	assert.strictEqual(effect.nodes[3].uv, null);
+	assert.strictEqual(countWarnings(effect, "uv_unsupported"), 1);
+});
+
+test("parses generation location shapes and merges point offsets", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <GenerationLocationValues>
+    <Type>1</Type>
+    <Sphere>
+      <Radius><Center>1.5</Center><Min>1.5</Min><Max>1.5</Max></Radius>
+      <RotationX><Min>-360</Min><Max>360</Max></RotationX>
+      <RotationY><Min>-360</Min><Max>360</Max></RotationY>
+    </Sphere>
+  </GenerationLocationValues>
+  <Name>sphere</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>8</Value></MaxGeneration></CommonValues>
+  <GenerationLocationValues>
+    <EffectsRotation>True</EffectsRotation>
+    <Type>3</Type>
+    <Circle>
+      <Division>8</Division>
+      <Radius><Center>2</Center><Min>2</Min><Max>2</Max></Radius>
+      <Type>1</Type>
+    </Circle>
+  </GenerationLocationValues>
+  <Name>circle</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <GenerationLocationValues>
+    <Type>0</Type>
+    <Point>
+      <Location><X><Min>-1</Min><Max>1</Max></X></Location>
+    </Point>
+  </GenerationLocationValues>
+  <Name>point</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <GenerationLocationValues>
+    <Type>2</Type>
+  </GenerationLocationValues>
+  <Name>model-spawn</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-genloc-");
+	const effect = convertProject(projectPath);
+
+	assert.strictEqual(effect.nodes[0].spawn.type, 1);
+	assert.strictEqual(effect.nodes[0].spawn.sphere.radius.center, 1.5);
+	assert.strictEqual(effect.nodes[1].spawn.type, 3);
+	assert.strictEqual(effect.nodes[1].spawn.circle.division, 8);
+	assert.strictEqual(effect.nodes[1].spawn.circle.order, 1);
+	assert.strictEqual(effect.nodes[1].spawn.effectsRotation, true);
+	assert.strictEqual(effect.nodes[2].spawn, null);
+	assert.strictEqual(effect.nodes[2].transform.positionRange.min.x, -1);
+	assert.strictEqual(effect.nodes[2].transform.positionRange.max.x, 1);
+	assert.strictEqual(effect.nodes[3].spawn, null);
+	assert.strictEqual(countWarnings(effect, "spawn_unsupported"), 1);
+});
+
+test("parses sound payloads and reports unmapped waves", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <SoundValues>
+    <Type>1</Type>
+    <Sound>
+      <Wave>Sound/Fire.wav</Wave>
+      <Volume><Center>0.8</Center></Volume>
+      <Pitch><Center>0.5</Center></Pitch>
+      <Delay><Center>6</Center></Delay>
+    </Sound>
+  </SoundValues>
+  <Name>with-sound</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <SoundValues>
+    <Type>0</Type>
+    <Sound><Wave>Sound/Unused.wav</Wave></Sound>
+  </SoundValues>
+  <Name>disabled-sound</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-sound-");
+	const effect = convertProject(projectPath);
+
+	assert.strictEqual(effect.nodes[0].sound.wave, "Sound/Fire.wav");
+	assert.strictEqual(effect.nodes[0].sound.volume.center, 0.8);
+	assert.strictEqual(effect.nodes[0].sound.pitch.center, 0.5);
+	assert.strictEqual(effect.nodes[1].sound, null);
+	assert.deepStrictEqual(effect.dependencies.sounds, ["Sound/Fire.wav"]);
+	assert.strictEqual(countWarnings(effect, "sound_unmapped"), 1);
+});
+
+test("respects legacy force-field types and reads 1.6+ LocalForceField gravity", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <LocationAbsValues>
+    <Type>0</Type>
+    <Gravity><Gravity><Y><Center>-2</Center></Y></Gravity></Gravity>
+  </LocationAbsValues>
+  <Name>disabled-gravity</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <LocationAbsValues>
+    <Type>2</Type>
+    <AttractiveForce><Force>0.01</Force></AttractiveForce>
+  </LocationAbsValues>
+  <Name>attractor</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <LocationAbsValues>
+    <LocalForceField1>
+      <Type>8</Type>
+      <Gravity><Gravity><Y><Center>-0.25</Center></Y></Gravity></Gravity>
+    </LocalForceField1>
+    <LocalForceField2>
+      <Type>1</Type>
+    </LocalForceField2>
+  </LocationAbsValues>
+  <Name>modern-gravity</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-force-");
+	const effect = convertProject(projectPath);
+
+	assert.strictEqual(effect.nodes[0].transform.acceleration.center.y, 0);
+	assert.strictEqual(effect.nodes[2].transform.acceleration.center.y, -0.25);
+	assert.strictEqual(countWarnings(effect, "force_field_unsupported"), 2);
+});
+
+test("reads Effekseer 1.5+ StandardColor at DrawingValues/ColorAll", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <DrawingValues>
+    <Type>2</Type>
+    <ColorAll>
+      <Type>2</Type>
+      <Easing>
+        <Start><R><Center>255</Center></R><G><Center>128</Center></G><B><Center>0</Center></B><A><Center>255</Center></A></Start>
+        <End><R><Center>0</Center></R><G><Center>0</Center></G><B><Center>255</Center></B><A><Center>0</Center></A></End>
+      </Easing>
+    </ColorAll>
+  </DrawingValues>
+  <Name>standard-easing</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <DrawingValues>
+    <Type>2</Type>
+    <ColorAll>
+      <Type>4</Type>
+      <Fixed><R>10</R><G>20</G><B>30</B><A>255</A></Fixed>
+    </ColorAll>
+  </DrawingValues>
+  <Name>standard-gradient</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-standard-color-");
+	const effect = convertProject(projectPath);
+
+	assert.deepStrictEqual(effect.nodes[0].color, { r: 255, g: 128, b: 0, a: 255 });
+	assert.deepStrictEqual(effect.nodes[0].colorOverLife.finish, { r: 0, g: 0, b: 255, a: 0 });
+	assert.deepStrictEqual(effect.nodes[1].color, { r: 10, g: 20, b: 30, a: 255 });
+	assert.strictEqual(countWarnings(effect, "color_unsupported"), 1);
+});
+
+test("bakes location, rotation, and scaling FCurves into sampled keys", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues>
+    <MaxGeneration><Value>1</Value></MaxGeneration>
+    <Life><Center>20</Center><Min>20</Min><Max>20</Max></Life>
+  </CommonValues>
+  <LocationValues>
+    <Type>3</Type>
+    <LocationFCurve>
+      <FCurve>
+        <Keys>
+          <Y>
+            <Key0><Frame>0</Frame><Value>0</Value></Key0>
+            <Key1><Frame>10</Frame><Value>5</Value></Key1>
+            <Key2><Frame>20</Frame><Value>5</Value></Key2>
+          </Y>
+        </Keys>
+      </FCurve>
+    </LocationFCurve>
+  </LocationValues>
+  <RotationValues>
+    <Type>5</Type>
+    <RotationFCurve>
+      <FCurve>
+        <Keys>
+          <Z>
+            <Key0><Frame>0</Frame><Value>0</Value></Key0>
+            <Key1><Frame>20</Frame><Value>180</Value></Key1>
+          </Z>
+        </Keys>
+      </FCurve>
+    </RotationFCurve>
+  </RotationValues>
+  <ScalingValues>
+    <Type>5</Type>
+    <FCurve>
+      <FCurve>
+        <Keys>
+          <X>
+            <Key0><Frame>0</Frame><Value>1</Value></Key0>
+            <Key1><Frame>20</Frame><Value>3</Value></Key1>
+          </X>
+          <Y>
+            <Key0><Frame>0</Frame><Value>1</Value></Key0>
+            <Key1><Frame>20</Frame><Value>3</Value></Key1>
+          </Y>
+        </Keys>
+      </FCurve>
+    </FCurve>
+  </ScalingValues>
+  <Name>fcurves</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-fcurve-");
+	const effect = convertProject(projectPath);
+	const node = effect.nodes[0];
+
+	assert.deepStrictEqual(node.transform.positionKeys.frames, [0, 10, 20]);
+	assert.strictEqual(node.transform.positionKeys.values[1].y, 5);
+	assert.strictEqual(node.transform.velocity.center.y, 0.25);
+	assert.strictEqual(node.transform.rotation.rotationKeys.values[1].z, 180);
+	assert.strictEqual(node.transform.size.scaleKeys.values[1].x, 3);
+	assert.strictEqual(node.transform.size.start, 1);
+	assert.strictEqual(node.transform.size.finish, 3);
+	assert.strictEqual(countWarnings(effect, "location_fcurve"), 1);
+	assert.strictEqual(countWarnings(effect, "rotation_fcurve"), 1);
+	assert.strictEqual(countWarnings(effect, "scaling_fcurve"), 1);
+});
+
+test("captures animated ring radii and infinite-life removal flags", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues>
+    <MaxGeneration><Value>1</Value></MaxGeneration>
+    <Life><Center>30</Center><Min>30</Min><Max>30</Max></Life>
+    <RemoveWhenLifeIsExtinct>False</RemoveWhenLifeIsExtinct>
+  </CommonValues>
+  <DrawingValues>
+    <Type>4</Type>
+    <Ring>
+      <Outer>2</Outer>
+      <Outer_Easing>
+        <Start><X><Center>1</Center></X></Start>
+        <End><X><Center>6</Center></X></End>
+      </Outer_Easing>
+      <Inner_Fixed><Location><X>0.5</X></Location></Inner_Fixed>
+    </Ring>
+  </DrawingValues>
+  <Name>expanding-ring</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-ring-easing-");
+	const effect = convertProject(projectPath);
+	const ring = effect.nodes[0].visual.ring;
+
+	assert.strictEqual(ring.outerRadius, 1);
+	assert.strictEqual(ring.outerRadiusFinish, 6);
+	assert.strictEqual(ring.innerRadius, 0.5);
+	assert.strictEqual(effect.nodes[0].life.infinite, true);
+});
+
+test("warns for distortion, custom materials, and subtract blending", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues>
+    <Distortion>True</Distortion>
+    <AlphaBlend>3</AlphaBlend>
+  </RendererCommonValues>
+  <Name>distorted</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RendererCommonValues>
+    <Material>128</Material>
+  </RendererCommonValues>
+  <Name>custom-material</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <RotationValues><Type>7</Type></RotationValues>
+  <Name>rotate-to-velocity</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-warnings-");
+	const effect = convertProject(projectPath);
+
+	assert.strictEqual(countWarnings(effect, "distortion_unsupported"), 1);
+	assert.strictEqual(countWarnings(effect, "material_unsupported"), 1);
+	assert.strictEqual(countWarnings(effect, "blend_unsupported"), 1);
+	assert.strictEqual(countWarnings(effect, "rotation_unsupported"), 1);
 });
 
 test("converts an Effekseer sample effect as an integration regression", () => {

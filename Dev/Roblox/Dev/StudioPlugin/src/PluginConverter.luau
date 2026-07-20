@@ -352,6 +352,360 @@ local function averageXY(vector): number
 	return (math.abs(vector.x or 0) + math.abs(vector.y or 0)) * 0.5
 end
 
+local function scaleVector(vector)
+	return {
+		x = math.abs(vector.x or 0),
+		y = math.abs(vector.y or 0),
+		z = math.abs(vector.z or 0),
+	}
+end
+
+local function singleScaleVector(value: number)
+	local safeValue = math.abs(value or 0)
+	return { x = safeValue, y = safeValue, z = safeValue }
+end
+
+local function scaleVectorRange(range, factor: number)
+	local function scale(vector)
+		return {
+			x = (vector.x or 0) * factor,
+			y = (vector.y or 0) * factor,
+			z = (vector.z or 0) * factor,
+		}
+	end
+	return { center = scale(range.center), min = scale(range.min), max = scale(range.max) }
+end
+
+local function keyedChildrenSorted(node, prefix: string)
+	local entries = {}
+	for _, candidate in ipairs(node.children) do
+		if string.sub(candidate.name, 1, #prefix) == prefix then
+			local index = tonumber(string.sub(candidate.name, #prefix + 1))
+			if index ~= nil then
+				table.insert(entries, { index = index, node = candidate })
+			end
+		end
+	end
+	table.sort(entries, function(left, right)
+		return left.index < right.index
+	end)
+	local result = {}
+	for _, entry in ipairs(entries) do
+		table.insert(result, entry.node)
+	end
+	return result
+end
+
+local function parseFCurveKeys(axisNode)
+	if not axisNode then
+		return {}
+	end
+	local keys = {}
+	for _, keyNode in ipairs(keyedChildrenSorted(axisNode, "Key")) do
+		table.insert(keys, {
+			frame = numberAt(keyNode, "Frame", 0),
+			value = numberAt(keyNode, "Value", 0),
+		})
+	end
+	table.sort(keys, function(left, right)
+		return left.frame < right.frame
+	end)
+	return keys
+end
+
+local function evaluateFCurve(keys, frame: number, defaultValue: number): number
+	if #keys == 0 then
+		return defaultValue
+	end
+	if frame <= keys[1].frame then
+		return keys[1].value
+	end
+	local last = keys[#keys]
+	if frame >= last.frame then
+		return last.value
+	end
+	for index = 2, #keys do
+		if frame <= keys[index].frame then
+			local previous = keys[index - 1]
+			local nextKey = keys[index]
+			local span = nextKey.frame - previous.frame
+			local t = if span > 1e-9 then (frame - previous.frame) / span else 0
+			return previous.value + (nextKey.value - previous.value) * t
+		end
+	end
+	return last.value
+end
+
+local FCURVE_MAX_SAMPLES = 24
+
+local function bakeFCurveVector(container, life, defaults)
+	local keysNode = find(container, "Keys")
+	if not keysNode then
+		return nil
+	end
+
+	local axes = {
+		x = parseFCurveKeys(child(keysNode, "X")),
+		y = parseFCurveKeys(child(keysNode, "Y")),
+		z = parseFCurveKeys(child(keysNode, "Z")),
+		s = parseFCurveKeys(child(keysNode, "S")),
+	}
+	if #axes.x == 0 and #axes.y == 0 and #axes.z == 0 and #axes.s == 0 then
+		return nil
+	end
+
+	local lifeFrames = math.max(1, life.max or life.center or 1)
+	local frameSet = { [0] = true, [lifeFrames] = true }
+	for _, axisKeys in pairs(axes) do
+		for _, key in ipairs(axisKeys) do
+			if key.frame >= 0 and key.frame <= lifeFrames then
+				frameSet[key.frame] = true
+			end
+		end
+	end
+	local frames = {}
+	for frame in pairs(frameSet) do
+		table.insert(frames, frame)
+	end
+	table.sort(frames)
+	if #frames > FCURVE_MAX_SAMPLES then
+		local sampledSet = {}
+		for index = 0, FCURVE_MAX_SAMPLES - 1 do
+			local pick = frames[math.floor((index * (#frames - 1)) / (FCURVE_MAX_SAMPLES - 1) + 0.5) + 1]
+			sampledSet[pick] = true
+		end
+		frames = {}
+		for frame in pairs(sampledSet) do
+			table.insert(frames, frame)
+		end
+		table.sort(frames)
+	end
+
+	local scalar = #axes.s > 0
+	local values = {}
+	for _, frame in ipairs(frames) do
+		if scalar then
+			local value = evaluateFCurve(axes.s, frame, defaults.x)
+			table.insert(values, { x = value, y = value, z = value })
+		else
+			table.insert(values, {
+				x = evaluateFCurve(axes.x, frame, defaults.x),
+				y = evaluateFCurve(axes.y, frame, defaults.y),
+				z = evaluateFCurve(axes.z, frame, defaults.z),
+			})
+		end
+	end
+	return { frames = frames, values = values }
+end
+
+local function fcurveContainerAt(node, candidates)
+	for _, candidate in ipairs(candidates) do
+		local found = find(node, candidate)
+		if found and find(found, "Keys") then
+			return found
+		end
+	end
+	return nil
+end
+
+local function warning(code: string, message: string, nodeName: string?)
+	local value = { code = code, message = message }
+	if nodeName then
+		value.node = nodeName
+	end
+	return value
+end
+
+local function uvPayload(node, warnings, nodeName: string)
+	local uvType = intAt(node, "RendererCommonValues/UV", 0)
+	if uvType == 0 then
+		return nil
+	end
+	local base = find(node, "RendererCommonValues")
+	if not base then
+		return nil
+	end
+
+	if uvType == 1 then
+		return {
+			type = 1,
+			start = { x = numberAt(base, "UVFixed/Start/X", 0), y = numberAt(base, "UVFixed/Start/Y", 0) },
+			size = { x = numberAt(base, "UVFixed/Size/X", 0), y = numberAt(base, "UVFixed/Size/Y", 0) },
+		}
+	end
+
+	if uvType == 2 then
+		local animation = find(base, "UVAnimation/AnimationParams") or find(base, "UVAnimation")
+		if not animation then
+			return nil
+		end
+		-- FrameLength is an IntWithInfinite in newer saves (nested Value element) and plain text in older ones.
+		local directFrameLength = tonumber(textAt(animation, "FrameLength") or "")
+		local frameLength = directFrameLength or numberAt(animation, "FrameLength/Value", 1)
+		return {
+			type = 2,
+			start = { x = numberAt(animation, "Start/X", 0), y = numberAt(animation, "Start/Y", 0) },
+			size = { x = numberAt(animation, "Size/X", 0), y = numberAt(animation, "Size/Y", 0) },
+			animation = {
+				frameLength = math.max(1, frameLength),
+				countX = math.max(1, intAt(animation, "FrameCountX", 1)),
+				countY = math.max(1, intAt(animation, "FrameCountY", 1)),
+				loopType = intAt(animation, "LoopType", 0),
+				startSheet = intAt(animation, "StartSheet", 0),
+			},
+		}
+	end
+
+	if uvType == 3 then
+		return {
+			type = 3,
+			start = {
+				x = randomNumberAt(base, "UVScroll/Start/X", 0).center,
+				y = randomNumberAt(base, "UVScroll/Start/Y", 0).center,
+			},
+			size = {
+				x = randomNumberAt(base, "UVScroll/Size/X", 0).center,
+				y = randomNumberAt(base, "UVScroll/Size/Y", 0).center,
+			},
+			scroll = {
+				speed = {
+					x = randomNumberAt(base, "UVScroll/Speed/X", 0).center,
+					y = randomNumberAt(base, "UVScroll/Speed/Y", 0).center,
+				},
+			},
+		}
+	end
+
+	table.insert(
+		warnings,
+		warning(
+			"uv_unsupported",
+			"UV type " .. tostring(uvType) .. " (FCurve) is not supported; default UVs are used.",
+			nodeName
+		)
+	)
+	return nil
+end
+
+local function rangeIsZero(range): boolean
+	for _, key in ipairs({ "center", "min", "max" }) do
+		local vector = range[key] or {}
+		if math.abs(vector.x or 0) > 1e-9 or math.abs(vector.y or 0) > 1e-9 or math.abs(vector.z or 0) > 1e-9 then
+			return false
+		end
+	end
+	return true
+end
+
+local function spawnPayload(node, warnings, nodeName: string)
+	local base = find(node, "GenerationLocationValues")
+	if not base then
+		return nil
+	end
+	local spawnType = intAt(base, "Type", 0)
+	local effectsRotation = boolAt(base, "EffectsRotation", false)
+
+	if spawnType == 0 then
+		-- Point offsets are merged into transform.positionRange by convertNode.
+		local location = randomVectorAt(base, "Point/Location", { x = 0, y = 0, z = 0 })
+		if rangeIsZero(location) then
+			return nil
+		end
+		return { type = 0, effectsRotation = effectsRotation, point = { location = location } }
+	end
+
+	if spawnType == 1 then
+		return {
+			type = 1,
+			effectsRotation = effectsRotation,
+			sphere = {
+				radius = randomNumberAt(base, "Sphere/Radius", 0),
+				rotationX = randomNumberAt(base, "Sphere/RotationX", 0),
+				rotationY = randomNumberAt(base, "Sphere/RotationY", 0),
+			},
+		}
+	end
+
+	if spawnType == 3 then
+		return {
+			type = 3,
+			effectsRotation = effectsRotation,
+			circle = {
+				radius = randomNumberAt(base, "Circle/Radius", 0),
+				axis = intAt(base, "Circle/AxisDirection", 2),
+				division = math.max(1, intAt(base, "Circle/Division", 8)),
+				angleStart = randomNumberAt(base, "Circle/AngleStart", 0),
+				angleEnd = randomNumberAt(base, "Circle/AngleEnd", 360),
+				angleNoise = randomNumberAt(base, "Circle/AngleNoize", 0),
+				order = intAt(base, "Circle/Type", 0),
+			},
+		}
+	end
+
+	if spawnType == 4 then
+		return {
+			type = 4,
+			effectsRotation = effectsRotation,
+			line = {
+				from = randomVectorAt(base, "Line/PositionStart", { x = 0, y = 0, z = 0 }),
+				to = randomVectorAt(base, "Line/PositionEnd", { x = 0, y = 0, z = 0 }),
+				division = math.max(1, intAt(base, "Line/Division", 8)),
+				noise = randomNumberAt(base, "Line/PositionNoize", 0),
+				order = intAt(base, "Line/Type", 0),
+			},
+		}
+	end
+
+	table.insert(
+		warnings,
+		warning(
+			"spawn_unsupported",
+			"Generation location type " .. tostring(spawnType) .. " is not supported; point emission is used.",
+			nodeName
+		)
+	)
+	return nil
+end
+
+local function soundPayload(node, context, nodeName: string)
+	local base = find(node, "SoundValues")
+	if not base or intAt(base, "Type", 0) ~= 1 then
+		return nil
+	end
+	local wave = textAt(base, "Sound/Wave")
+	if not wave then
+		return nil
+	end
+
+	context.dependencies.sounds[wave] = true
+	local asset = nil
+	if context.assetMap then
+		asset = context.assetMapLookup(wave)
+	end
+	if not asset then
+		table.insert(
+			context.warnings,
+			warning("sound_unmapped", "No Roblox asset id mapped for sound '" .. wave .. "'.", nodeName)
+		)
+	end
+	return {
+		wave = wave,
+		asset = asset,
+		volume = randomNumberAt(base, "Sound/Volume", 1),
+		pitch = randomNumberAt(base, "Sound/Pitch", 0),
+		delay = randomNumberAt(base, "Sound/Delay", 0),
+	}
+end
+
+local LOCAL_FORCE_FIELD_NAMES = {
+	[1] = "Turbulence",
+	[2] = "Force",
+	[3] = "Wind",
+	[4] = "Vortex",
+	[7] = "Drag",
+	[9] = "AttractiveForce",
+}
+
 local function colorAt(node, candidates)
 	for _, xmlPath in ipairs(candidates) do
 		local base = find(node, xmlPath)
@@ -406,7 +760,41 @@ local function fadeFrameAt(node, name: string): number
 	return numberAt(node, "RendererCommonValues/" .. name .. "/Frame", 0)
 end
 
-local function colorPayload(node)
+local function colorPayload(node, warnings, nodeName: string)
+	-- Effekseer 1.5+ saves Sprite/Model colors as a StandardColor at DrawingValues/ColorAll.
+	local standard = find(node, "DrawingValues/ColorAll")
+	if standard and #standard.children > 0 then
+		local mode = intAt(standard, "Type", 0)
+		local fixed = colorAt(node, { "DrawingValues/ColorAll/Fixed" })
+		if mode == 2 and find(standard, "Easing") then
+			local start = colorRangeAt(standard, "Easing/Start", fixed)
+			local finish = colorRangeAt(standard, "Easing/End", start)
+			return {
+				color = start,
+				colorOverLife = { start = start, finish = finish },
+			}
+		end
+		if mode == 1 and find(standard, "Random") then
+			return {
+				color = colorRangeAt(standard, "Random", fixed),
+				colorOverLife = nil,
+			}
+		end
+		if mode == 3 or mode == 4 then
+			table.insert(
+				warnings,
+				warning(
+					"color_unsupported",
+					"Color mode "
+						.. (if mode == 3 then "FCurve" else "Gradient")
+						.. " is approximated with a fixed color.",
+					nodeName
+				)
+			)
+		end
+		return { color = fixed, colorOverLife = nil }
+	end
+
 	for _, rendererName in ipairs({ "Sprite", "Ribbon", "Ring", "Track", "Model" }) do
 		local basePath = "DrawingValues/" .. rendererName
 		if find(node, basePath) then
@@ -451,14 +839,6 @@ local function colorPayload(node)
 	}
 end
 
-local function warning(code: string, message: string, nodeName: string?)
-	local value = { code = code, message = message }
-	if nodeName then
-		value.node = nodeName
-	end
-	return value
-end
-
 local function rendererTypeFor(node): string
 	local rendererId = intAt(node, "DrawingValues/Type", 2)
 	return RENDERER_TYPES[rendererId] or ("Unknown" .. tostring(rendererId))
@@ -488,7 +868,16 @@ end
 
 local function nodeLife(node)
 	local common = find(node, "CommonValues")
-	return if common then randomNumberAt(common, "Life", 100) else { center = 100, min = 100, max = 100 }
+	local life = if common then randomNumberAt(common, "Life", 100) else { center = 100, min = 100, max = 100 }
+	if common then
+		-- Modern saves nest removal flags under Removal; legacy saves keep flat RemoveWhen* elements.
+		local removalNested = boolAt(common, "Removal/WhenLifeIsExtinct", true)
+		local removalLegacy = boolAt(common, "RemoveWhenLifeIsExtinct", true)
+		if not removalNested or not removalLegacy then
+			life.infinite = true
+		end
+	end
+	return life
 end
 
 local function maxGeneration(node): number
@@ -502,12 +891,59 @@ local function maxGeneration(node): number
 	return math.max(0, intAt(common, "MaxGeneration/Value", 1))
 end
 
+local function fieldAcceleration(node, warnings, nodeName: string)
+	local acceleration = randomVectorAt(node, "__missing__", { x = 0, y = 0, z = 0 })
+	local abs = find(node, "LocationAbsValues")
+	if not abs then
+		return acceleration
+	end
+
+	-- Legacy (pre-1.6) layout: Type selects None(0)/Gravity(1)/AttractiveForce(2).
+	local legacyType = intAt(abs, "Type", if find(abs, "Gravity") then 1 else 0)
+	if legacyType == 1 and find(abs, "Gravity") then
+		acceleration = addVectorRanges(acceleration, randomVectorAt(abs, "Gravity/Gravity", { x = 0, y = 0, z = 0 }))
+	elseif legacyType == 2 then
+		table.insert(
+			warnings,
+			warning("force_field_unsupported", "Attractive force is not supported by the Roblox runtime.", nodeName)
+		)
+	end
+
+	-- Modern (1.6+) layout: up to four LocalForceField slots.
+	for index = 1, 4 do
+		local field = find(abs, "LocalForceField" .. tostring(index))
+		if field then
+			local fieldType = intAt(field, "Type", 0)
+			if fieldType == 8 then
+				local power = numberAt(field, "Power", 1)
+				acceleration = addVectorRanges(
+					acceleration,
+					scaleVectorRange(randomVectorAt(field, "Gravity/Gravity", { x = 0, y = 0, z = 0 }), power)
+				)
+			elseif fieldType ~= 0 then
+				table.insert(
+					warnings,
+					warning(
+						"force_field_unsupported",
+						"Local force field '"
+							.. (LOCAL_FORCE_FIELD_NAMES[fieldType] or tostring(fieldType))
+							.. "' is not supported by the Roblox runtime.",
+						nodeName
+					)
+				)
+			end
+		end
+	end
+	return acceleration
+end
+
 local function locationPayload(node, warnings, nodeName: string, life)
 	local locationType = intAt(node, "LocationValues/Type", 0)
 	local position = { x = 0, y = 0, z = 0 }
 	local positionRange = vectorRangeFromVector(position)
 	local velocity = randomVectorAt(node, "__missing__", { x = 0, y = 0, z = 0 })
 	local acceleration = randomVectorAt(node, "__missing__", { x = 0, y = 0, z = 0 })
+	local positionKeys = nil
 
 	if locationType == 0 then
 		position = fixedVectorAt(node, "LocationValues/Fixed/Location", { x = 0, y = 0, z = 0 })
@@ -524,10 +960,34 @@ local function locationPayload(node, warnings, nodeName: string, life)
 		positionRange = start
 		velocity = vectorVelocityFromRanges(start, finish, math.max(1, life.center or 1))
 	elseif locationType == 3 then
-		table.insert(
-			warnings,
-			warning("location_fcurve", "Location FCurve is not evaluated by the Roblox runtime yet.", nodeName)
-		)
+		local container = fcurveContainerAt(node, {
+			"LocationValues/LocationFCurve/FCurve",
+			"LocationValues/FCurve/FCurve",
+			"LocationValues/LocationFCurve",
+			"LocationValues/FCurve",
+		})
+		local baked = if container then bakeFCurveVector(container, life, { x = 0, y = 0, z = 0 }) else nil
+		if baked then
+			positionKeys = baked
+			position = baked.values[1]
+			positionRange = vectorRangeFromVector(position)
+			local last = baked.values[#baked.values]
+			local frames = math.max(1, baked.frames[#baked.frames] - baked.frames[1])
+			velocity = vectorRangeFromVector(divideVector(subtractVectors(last, position), frames))
+			table.insert(
+				warnings,
+				warning("location_fcurve", "Location FCurve is approximated with baked linear samples.", nodeName)
+			)
+		else
+			table.insert(
+				warnings,
+				warning(
+					"location_fcurve",
+					"Location FCurve keys could not be read; the node stays at its origin.",
+					nodeName
+				)
+			)
+		end
 	else
 		table.insert(
 			warnings,
@@ -539,15 +999,13 @@ local function locationPayload(node, warnings, nodeName: string, life)
 		)
 	end
 
-	acceleration = addVectorRanges(
-		acceleration,
-		randomVectorAt(node, "LocationAbsValues/Gravity/Gravity", { x = 0, y = 0, z = 0 })
-	)
+	acceleration = addVectorRanges(acceleration, fieldAcceleration(node, warnings, nodeName))
 
 	return {
 		type = locationType,
 		position = position,
 		positionRange = positionRange,
+		positionKeys = positionKeys,
 		velocity = velocity,
 		acceleration = acceleration,
 		emissionDirection = dominantDirection(velocity.center),
@@ -555,12 +1013,13 @@ local function locationPayload(node, warnings, nodeName: string, life)
 	}
 end
 
-local function rotationPayload(node, life)
+local function rotationPayload(node, life, warnings, nodeName: string)
 	local rotationType = intAt(node, "RotationValues/Type", 0)
 	local rotation = { center = 0, min = 0, max = 0 }
 	local speed = { center = 0, min = 0, max = 0 }
 	local rotation3 = randomVectorAt(node, "__missing__", { x = 0, y = 0, z = 0 })
 	local speed3 = randomVectorAt(node, "__missing__", { x = 0, y = 0, z = 0 })
+	local rotationKeys = nil
 
 	if rotationType == 0 then
 		local fixed = fixedVectorAt(node, "RotationValues/Fixed/Rotation", { x = 0, y = 0, z = 0 })
@@ -586,21 +1045,79 @@ local function rotationPayload(node, life)
 	elseif rotationType == 3 then
 		rotation = randomNumberAt(node, "RotationValues/AxisPVA/Rotation", 0)
 		speed = randomNumberAt(node, "RotationValues/AxisPVA/Velocity", 0)
+	elseif rotationType == 4 then
+		rotation = randomNumberAt(node, "RotationValues/AxisEasing/Easing/Start", 0)
+		local finish = randomNumberAt(node, "RotationValues/AxisEasing/Easing/End", rotation.center)
+		speed = numberVelocityFromRanges(rotation, finish, math.max(1, life.center or 1))
+	elseif rotationType == 5 then
+		local container = fcurveContainerAt(node, {
+			"RotationValues/RotationFCurve/FCurve",
+			"RotationValues/FCurve/FCurve",
+			"RotationValues/RotationFCurve",
+		})
+		local baked = if container then bakeFCurveVector(container, life, { x = 0, y = 0, z = 0 }) else nil
+		if baked then
+			rotationKeys = baked
+			local first = baked.values[1]
+			local last = baked.values[#baked.values]
+			local frames = math.max(1, baked.frames[#baked.frames] - baked.frames[1])
+			local averageSpeed = divideVector(subtractVectors(last, first), frames)
+			rotation3 = vectorRangeFromVector(first)
+			speed3 = vectorRangeFromVector(averageSpeed)
+			rotation = { center = first.z, min = first.z, max = first.z }
+			speed = { center = averageSpeed.z, min = averageSpeed.z, max = averageSpeed.z }
+			table.insert(
+				warnings,
+				warning("rotation_fcurve", "Rotation FCurve is approximated with baked linear samples.", nodeName)
+			)
+		else
+			table.insert(
+				warnings,
+				warning("rotation_fcurve", "Rotation FCurve keys could not be read; fixed rotation is used.", nodeName)
+			)
+		end
+	elseif rotationType == 6 or rotationType == 7 then
+		table.insert(
+			warnings,
+			warning(
+				"rotation_unsupported",
+				"Rotation type "
+					.. (if rotationType == 6 then "RotateToViewpoint" else "RotateToVelocity")
+					.. " is not supported.",
+				nodeName
+			)
+		)
 	end
 
-	return { type = rotationType, rotation = rotation, speed = speed, rotation3 = rotation3, speed3 = speed3 }
+	return {
+		type = rotationType,
+		rotation = rotation,
+		speed = speed,
+		rotation3 = rotation3,
+		speed3 = speed3,
+		rotationKeys = rotationKeys,
+	}
 end
 
-local function scalePayload(node, life)
+local function scalePayload(node, life, warnings, nodeName: string)
 	local scaleType = intAt(node, "ScalingValues/Type", 0)
 	local start = 1
 	local finish = 1
 	local envelope = 0
+	local startVector = { x = 1, y = 1, z = 1 }
+	local finishVector = { x = 1, y = 1, z = 1 }
+	local pva = nil
+	local easing = nil
+	local singlePva = nil
+	local singleEasing = nil
+	local scaleKeys = nil
 
 	if scaleType == 0 then
 		local scale = fixedVectorAt(node, "ScalingValues/Fixed/Scale", { x = 1, y = 1, z = 1 })
 		start = math.max(0, averageXY(scale))
 		finish = start
+		startVector = scaleVector(scale)
+		finishVector = startVector
 	elseif scaleType == 1 then
 		local base = randomVectorAt(node, "ScalingValues/PVA/Scale", { x = 1, y = 1, z = 1 })
 		local velocity = randomVectorAt(node, "ScalingValues/PVA/Velocity", { x = 0, y = 0, z = 0 })
@@ -613,8 +1130,14 @@ local function scalePayload(node, life)
 		local endY = base.center.y
 			+ velocity.center.y * lifeFrames
 			+ 0.5 * acceleration.center.y * lifeFrames * lifeFrames
+		local endZ = base.center.z
+			+ velocity.center.z * lifeFrames
+			+ 0.5 * acceleration.center.z * lifeFrames * lifeFrames
 		finish = math.max(0, (math.abs(endX) + math.abs(endY)) * 0.5)
 		envelope = math.max(0, (base.max.x - base.min.x + base.max.y - base.min.y) * 0.25)
+		startVector = scaleVector(base.center)
+		finishVector = scaleVector({ x = endX, y = endY, z = endZ })
+		pva = { scale = base, velocity = velocity, acceleration = acceleration }
 	elseif scaleType == 2 then
 		local startRange = randomVectorAt(node, "ScalingValues/Easing/Start", { x = 1, y = 1, z = 1 })
 		local finishRange = randomVectorAt(node, "ScalingValues/Easing/End", startRange.center)
@@ -633,6 +1156,9 @@ local function scalePayload(node, life)
 				- finishRange.min.y
 			) * 0.125
 		)
+		startVector = scaleVector(startRange.center)
+		finishVector = scaleVector(finishRange.center)
+		easing = { start = startRange, finish = finishRange }
 	elseif scaleType == 3 then
 		local base = randomNumberAt(node, "ScalingValues/SinglePVA/Scale", 1)
 		local velocity = randomNumberAt(node, "ScalingValues/SinglePVA/Velocity", 0)
@@ -644,18 +1170,61 @@ local function scalePayload(node, life)
 			math.abs(base.center + velocity.center * lifeFrames + 0.5 * acceleration.center * lifeFrames * lifeFrames)
 		)
 		envelope = math.max(0, (base.max - base.min) * 0.5)
+		startVector = singleScaleVector(base.center)
+		finishVector = singleScaleVector(
+			base.center + velocity.center * lifeFrames + 0.5 * acceleration.center * lifeFrames * lifeFrames
+		)
+		singlePva = { scale = base, velocity = velocity, acceleration = acceleration }
 	elseif scaleType == 4 then
 		local startRange = randomNumberAt(node, "ScalingValues/SingleEasing/Start", 1)
 		local finishRange = randomNumberAt(node, "ScalingValues/SingleEasing/End", startRange.center)
 		start = math.max(0, math.abs(startRange.center))
 		finish = math.max(0, math.abs(finishRange.center))
 		envelope = math.max(0, math.max(startRange.max - startRange.min, finishRange.max - finishRange.min) * 0.5)
+		startVector = singleScaleVector(startRange.center)
+		finishVector = singleScaleVector(finishRange.center)
+		singleEasing = { start = startRange, finish = finishRange }
+	elseif scaleType == 5 or scaleType == 6 then
+		local container = if scaleType == 5
+			then fcurveContainerAt(node, { "ScalingValues/FCurve/FCurve", "ScalingValues/FCurve" })
+			else fcurveContainerAt(node, { "ScalingValues/SingleFCurve/FCurve", "ScalingValues/SingleFCurve" })
+		local baked = if container then bakeFCurveVector(container, life, { x = 1, y = 1, z = 1 }) else nil
+		if baked then
+			scaleKeys = baked
+			local first = baked.values[1]
+			local last = baked.values[#baked.values]
+			start = math.max(0, averageXY(first))
+			finish = math.max(0, averageXY(last))
+			startVector = scaleVector(first)
+			finishVector = scaleVector(last)
+			table.insert(
+				warnings,
+				warning("scaling_fcurve", "Scaling FCurve is approximated with baked linear samples.", nodeName)
+			)
+		else
+			table.insert(
+				warnings,
+				warning("scaling_fcurve", "Scaling FCurve keys could not be read; scale 1 is used.", nodeName)
+			)
+		end
 	end
 
 	if finish ~= finish then
 		finish = if start == start then start else 1
 	end
-	return { type = scaleType, start = start, finish = finish, envelope = envelope }
+	return {
+		type = scaleType,
+		start = start,
+		finish = finish,
+		envelope = envelope,
+		startVector = startVector,
+		finishVector = finishVector,
+		pva = pva,
+		easing = easing,
+		singlePva = singlePva,
+		singleEasing = singleEasing,
+		scaleKeys = scaleKeys,
+	}
 end
 
 local function texturePathFor(node): string
@@ -669,6 +1238,41 @@ end
 
 local function modelPathFor(node): string
 	return textAt(node, "DrawingValues/Model/Model") or ""
+end
+
+local function spritePositionPayload(node)
+	if intAt(node, "DrawingValues/Sprite/Position", 0) ~= 1 then
+		return nil
+	end
+
+	local points = {
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_LL", { x = -0.5, y = -0.5, z = 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_LR", { x = 0.5, y = -0.5, z = 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_UL", { x = -0.5, y = 0.5, z = 0 }),
+		fixedVectorAt(node, "DrawingValues/Sprite/Position_Fixed_UR", { x = 0.5, y = 0.5, z = 0 }),
+	}
+	local minX = math.huge
+	local maxX = -math.huge
+	local minY = math.huge
+	local maxY = -math.huge
+
+	for _, point in ipairs(points) do
+		minX = math.min(minX, point.x or 0)
+		maxX = math.max(maxX, point.x or 0)
+		minY = math.min(minY, point.y or 0)
+		maxY = math.max(maxY, point.y or 0)
+	end
+
+	return {
+		center = {
+			x = (minX + maxX) * 0.5,
+			y = (minY + maxY) * 0.5,
+		},
+		size = {
+			x = math.max(0.01, maxX - minX),
+			y = math.max(0.01, maxY - minY),
+		},
+	}
 end
 
 local function builtInTextureFor(texturePath: string): string
@@ -737,12 +1341,37 @@ local function assetMapValue(assetMap, assetPath: string): string?
 	return nil
 end
 
-local function visualPayload(node, rendererType: string, modelPath: string, modelAsset: string?)
+local function ringRadiusPayload(ringNode, name: string, defaultValue: number, life)
+	if not ringNode then
+		return { start = defaultValue, finish = defaultValue }
+	end
+	local radiusType = intAt(ringNode, name, 0)
+	if radiusType == 1 then
+		local location = randomNumberAt(ringNode, name .. "_PVA/Location/X", defaultValue)
+		local velocity = randomNumberAt(ringNode, name .. "_PVA/Velocity/X", 0)
+		local acceleration = randomNumberAt(ringNode, name .. "_PVA/Acceleration/X", 0)
+		local frames = math.max(1, life.center or 1)
+		return {
+			start = location.center,
+			finish = location.center + velocity.center * frames + 0.5 * acceleration.center * frames * frames,
+		}
+	end
+	if radiusType == 2 then
+		local start = randomNumberAt(ringNode, name .. "_Easing/Start/X", defaultValue)
+		local finish = randomNumberAt(ringNode, name .. "_Easing/End/X", start.center)
+		return { start = start.center, finish = finish.center }
+	end
+	local fixed = numberAt(ringNode, name .. "_Fixed/Location/X", defaultValue)
+	return { start = fixed, finish = fixed }
+end
+
+local function visualPayload(node, rendererType: string, modelPath: string, modelAsset: string?, life)
 	local size = {}
 
 	if rendererType == "Sprite" then
 		size.sprite = {
 			billboard = intAt(node, "DrawingValues/Sprite/Billboard", 0),
+			position = spritePositionPayload(node),
 		}
 	elseif rendererType == "Ribbon" then
 		local left = numberAt(node, "DrawingValues/Ribbon/Position_Fixed_L", -0.5)
@@ -761,12 +1390,19 @@ local function visualPayload(node, rendererType: string, modelPath: string, mode
 			length = math.max(0.25, math.abs(front - back) ~= 0 and math.abs(front - back) or width * 8),
 		}
 	elseif rendererType == "Ring" then
-		local outer = numberAt(node, "DrawingValues/Ring/Outer_Fixed/Location/X", 1)
-		local inner = numberAt(node, "DrawingValues/Ring/Inner_Fixed/Location/X", 0)
+		local ring = find(node, "DrawingValues/Ring")
+		local outer = ringRadiusPayload(ring, "Outer", 1, life)
+		local inner = ringRadiusPayload(ring, "Inner", 0, life)
 		size.ring = {
 			vertexCount = intAt(node, "DrawingValues/Ring/VertexCount", 32),
-			outerRadius = math.max(0.01, math.abs(outer ~= 0 and outer or 1)),
-			innerRadius = math.max(0, math.abs(inner ~= 0 and inner or 0)),
+			outerRadius = math.max(0.01, math.abs(if outer.start ~= 0 then outer.start else 1)),
+			innerRadius = math.max(0, math.abs(inner.start)),
+			outerRadiusFinish = math.max(
+				0.01,
+				math.abs(if outer.finish ~= 0 then outer.finish else outer.start ~= 0 and outer.start or 1)
+			),
+			innerRadiusFinish = math.max(0, math.abs(inner.finish)),
+			billboard = intAt(node, "DrawingValues/Ring/Billboard", 0),
 		}
 	elseif rendererType == "Model" then
 		size.model = {
@@ -792,7 +1428,7 @@ local function convertNode(node, context, idPrefix: string)
 	local rendererType = rendererTypeFor(node)
 	local rendered = boolAt(node, "IsRendered", true) and rendererType ~= "None"
 	local life = nodeLife(node)
-	local color = colorPayload(node)
+	local color = colorPayload(node, context.warnings, nodeName)
 	local texturePath = texturePathFor(node)
 	local texture = nil
 	if texturePath ~= "" then
@@ -838,12 +1474,61 @@ local function convertNode(node, context, idPrefix: string)
 		)
 	end
 
+	local uv = if rendered then uvPayload(node, context.warnings, nodeName) else nil
+	local spawn = spawnPayload(node, context.warnings, nodeName)
+	local sound = soundPayload(node, context, nodeName)
+	local alphaBlend = alphaBlendAt(node)
+
+	if rendered then
+		local materialType = intAt(node, "RendererCommonValues/Material", 0)
+		if materialType == 6 or boolAt(node, "RendererCommonValues/Distortion", false) then
+			table.insert(
+				context.warnings,
+				warning("distortion_unsupported", "Background distortion is rendered as a plain texture.", nodeName)
+			)
+		elseif materialType == 128 then
+			table.insert(
+				context.warnings,
+				warning(
+					"material_unsupported",
+					"Custom material files are not supported; textures may be missing.",
+					nodeName
+				)
+			)
+		elseif materialType == 7 then
+			table.insert(
+				context.warnings,
+				warning("material_unsupported", "Lighting material is approximated with unlit rendering.", nodeName)
+			)
+		end
+		if alphaBlend == 3 or alphaBlend == 4 then
+			table.insert(
+				context.warnings,
+				warning(
+					"blend_unsupported",
+					(if alphaBlend == 3 then "Subtract" else "Multiply")
+						.. " blending is approximated with normal blending.",
+					nodeName
+				)
+			)
+		end
+	end
+
 	local location = locationPayload(node, context.warnings, nodeName, life)
+	if spawn and spawn.type == 0 and spawn.point then
+		location.position = addVectors(location.position, spawn.point.location.center)
+		location.positionRange = addVectorRanges(location.positionRange, spawn.point.location)
+		spawn = nil
+	end
 	local speedMin = vectorMagnitude(location.velocity.min)
 	local speedMax = vectorMagnitude(location.velocity.max)
 	if speedMin > speedMax then
 		speedMin, speedMax = speedMax, speedMin
 	end
+
+	-- Evaluate rotation/scale before recursing so warning order matches converter.js.
+	local rotation = rotationPayload(node, life, context.warnings, nodeName)
+	local size = scalePayload(node, life, context.warnings, nodeName)
 
 	local childRoot = find(node, "Children")
 	local childNodes = if childRoot then children(childRoot, "Node") else {}
@@ -859,13 +1544,16 @@ local function convertNode(node, context, idPrefix: string)
 		rendered = rendered,
 		texturePath = texturePath,
 		texture = texture,
-		alphaBlend = alphaBlendAt(node),
+		alphaBlend = alphaBlend,
 		zTest = boolAt(node, "RendererCommonValues/ZTest", true),
 		fadeIn = fadeFrameAt(node, "FadeIn"),
 		fadeOut = fadeFrameAt(node, "FadeOut"),
 		color = color.color,
 		colorOverLife = color.colorOverLife,
-		visual = visualPayload(node, rendererType, modelPath, modelAsset),
+		uv = uv,
+		spawn = spawn,
+		sound = sound,
+		visual = visualPayload(node, rendererType, modelPath, modelAsset, life),
 		life = life,
 		generation = {
 			max = maxGeneration(node),
@@ -875,13 +1563,14 @@ local function convertNode(node, context, idPrefix: string)
 		transform = {
 			position = location.position,
 			positionRange = location.positionRange,
+			positionKeys = location.positionKeys,
 			velocity = location.velocity,
 			acceleration = location.acceleration,
 			speed = { min = speedMin, max = speedMax },
 			emissionDirection = location.emissionDirection,
 			spreadAngle = location.spreadAngle,
-			rotation = rotationPayload(node, life),
-			size = scalePayload(node, life),
+			rotation = rotation,
+			size = size,
 		},
 		children = convertedChildren,
 	}
@@ -899,10 +1588,14 @@ function Converter.convertProject(xml: string, options)
 		dependencies = {
 			textures = {},
 			models = {},
+			sounds = {},
 		},
 		assetMap = options.assetMap or {},
 		useFallbackTextures = options.useFallbackTextures == true,
 	}
+	context.assetMapLookup = function(assetPath: string)
+		return assetMapValue(context.assetMap, assetPath)
+	end
 
 	local childRoot = find(projectRoot, "Root/Children")
 	local rootNodes = if childRoot then children(childRoot, "Node") else {}
@@ -915,7 +1608,7 @@ function Converter.convertProject(xml: string, options)
 
 	return {
 		format = "EffekseerRobloxEffect",
-		formatVersion = 1,
+		formatVersion = 2,
 		name = options.moduleName or "ImportedEffect",
 		source = options.source or "Studio import",
 		frameRate = options.frameRate or 60,
@@ -928,6 +1621,7 @@ function Converter.convertProject(xml: string, options)
 		dependencies = {
 			textures = sortedKeys(context.dependencies.textures),
 			models = sortedKeys(context.dependencies.models),
+			sounds = sortedKeys(context.dependencies.sounds),
 		},
 		warnings = context.warnings,
 		nodes = nodes,

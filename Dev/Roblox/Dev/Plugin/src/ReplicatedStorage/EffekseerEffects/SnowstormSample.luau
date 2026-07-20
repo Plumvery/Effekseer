@@ -4,11 +4,15 @@
 
 return {
 	format = "EffekseerRobloxEffect",
-	formatVersion = 1,
+	formatVersion = 2,
 	name = "SnowstormSample",
 	source = "../../Release/Sample/01_Suzuki01/003_snowstorm_effect/snowstorm11.efkproj",
 	frameRate = 60,
-	unitScale = 0.01,
+	startFrame = 60,
+	endFrame = 360,
+	durationFrames = 300,
+	isLoop = true,
+	unitScale = 0.2,
 	particleSizeScale = 1,
 	dependencies = {
 		textures = {
@@ -18,6 +22,7 @@ return {
 			"Texture/blue_fire.png",
 		},
 		models = {},
+		sounds = {},
 	},
 	warnings = {
 		{
@@ -27,7 +32,7 @@ return {
 		},
 		{
 			code = "location_fcurve",
-			message = "Location FCurve is not evaluated by the Roblox runtime yet.",
+			message = "Location FCurve is approximated with baked linear samples.",
 			node = "move_curve",
 		},
 		{
@@ -47,7 +52,7 @@ return {
 		},
 		{
 			code = "location_fcurve",
-			message = "Location FCurve is not evaluated by the Roblox runtime yet.",
+			message = "Location FCurve is approximated with baked linear samples.",
 			node = "move_curve",
 		},
 		{
@@ -83,7 +88,11 @@ return {
 				b = 255,
 				a = 255,
 			},
-			visual = {},
+			visual = {
+				sprite = {
+					billboard = 0,
+				},
+			},
 			life = {
 				center = 300,
 				min = 300,
@@ -107,6 +116,23 @@ return {
 					x = -40,
 					y = -20,
 					z = 0,
+				},
+				positionRange = {
+					center = {
+						x = -40,
+						y = -20,
+						z = 0,
+					},
+					min = {
+						x = -40,
+						y = -20,
+						z = 0,
+					},
+					max = {
+						x = -40,
+						y = -20,
+						z = 0,
+					},
 				},
 				velocity = {
 					center = {
@@ -160,12 +186,73 @@ return {
 						min = 0,
 						max = 0,
 					},
+					rotation3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = -10,
+						},
+						min = {
+							x = 0,
+							y = -20,
+							z = -20,
+						},
+						max = {
+							x = 0,
+							y = 20,
+							z = -10,
+						},
+					},
+					speed3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+					},
 				},
 				size = {
 					type = 3,
 					start = 0.7,
 					finish = 0.7,
 					envelope = 0.15,
+					startVector = {
+						x = 0.7,
+						y = 0.7,
+						z = 0.7,
+					},
+					finishVector = {
+						x = 0.7,
+						y = 0.7,
+						z = 0.7,
+					},
+					singlePva = {
+						scale = {
+							center = 0.7,
+							min = 0.4,
+							max = 0.7,
+						},
+						velocity = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+						acceleration = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+					},
 				},
 			},
 			children = {
@@ -211,24 +298,95 @@ return {
 					},
 					transform = {
 						position = {
-							x = 0,
-							y = 0,
+							x = 0.1815381,
+							y = 1.98026314,
 							z = 0,
 						},
-						velocity = {
+						positionRange = {
 							center = {
-								x = 0,
-								y = 0,
+								x = 0.1815381,
+								y = 1.98026314,
 								z = 0,
 							},
 							min = {
-								x = 0,
-								y = 0,
+								x = 0.1815381,
+								y = 1.98026314,
 								z = 0,
 							},
 							max = {
-								x = 0,
-								y = 0,
+								x = 0.1815381,
+								y = 1.98026314,
+								z = 0,
+							},
+						},
+						positionKeys = {
+							frames = {
+								0,
+								21,
+								24,
+								50,
+								71,
+								89,
+								91,
+								100,
+							},
+							values = {
+								{
+									x = 0.1815381,
+									y = 1.98026314,
+									z = 0,
+								},
+								{
+									x = 44.4209,
+									y = 32.5917854,
+									z = 0,
+								},
+								{
+									x = 43.2609852,
+									y = 36.96486,
+									z = 0,
+								},
+								{
+									x = 33.20839,
+									y = 32.9839668,
+									z = 0,
+								},
+								{
+									x = 38.0356762,
+									y = 29.76863,
+									z = 0,
+								},
+								{
+									x = 42.17335,
+									y = 36.281165,
+									z = 0,
+								},
+								{
+									x = 41.8561332,
+									y = 37.00478,
+									z = 0,
+								},
+								{
+									x = 40.4286575,
+									y = 37.00478,
+									z = 0,
+								},
+							},
+						},
+						velocity = {
+							center = {
+								x = 0.402471194,
+								y = 0.350245169,
+								z = 0,
+							},
+							min = {
+								x = 0.402471194,
+								y = 0.350245169,
+								z = 0,
+							},
+							max = {
+								x = 0.402471194,
+								y = 0.350245169,
 								z = 0,
 							},
 						},
@@ -250,10 +408,10 @@ return {
 							},
 						},
 						speed = {
-							min = 0,
-							max = 0,
+							min = 0.533530449,
+							max = 0.533530449,
 						},
-						emissionDirection = "Top",
+						emissionDirection = "Right",
 						spreadAngle = 0,
 						rotation = {
 							type = 0,
@@ -267,12 +425,56 @@ return {
 								min = 0,
 								max = 0,
 							},
+							rotation3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
+							speed3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
 						},
 						size = {
 							type = 0,
 							start = 1,
 							finish = 1,
 							envelope = 0,
+							startVector = {
+								x = 1,
+								y = 1,
+								z = 1,
+							},
+							finishVector = {
+								x = 1,
+								y = 1,
+								z = 1,
+							},
 						},
 					},
 					children = {
@@ -292,7 +494,11 @@ return {
 								b = 255,
 								a = 255,
 							},
-							visual = {},
+							visual = {
+								sprite = {
+									billboard = 0,
+								},
+							},
 							life = {
 								center = 120,
 								min = 120,
@@ -316,6 +522,23 @@ return {
 									x = 0,
 									y = 0,
 									z = 0,
+								},
+								positionRange = {
+									center = {
+										x = 0,
+										y = 0,
+										z = 0,
+									},
+									min = {
+										x = -0.5,
+										y = -0.5,
+										z = -2,
+									},
+									max = {
+										x = 0.5,
+										y = 0.5,
+										z = 2,
+									},
 								},
 								velocity = {
 									center = {
@@ -369,12 +592,73 @@ return {
 										min = 0,
 										max = 0,
 									},
+									rotation3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
+									speed3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
 								},
 								size = {
 									type = 3,
 									start = 0.1,
 									finish = 0.1,
 									envelope = 0.4,
+									startVector = {
+										x = 0.1,
+										y = 0.1,
+										z = 0.1,
+									},
+									finishVector = {
+										x = 0.1,
+										y = 0.1,
+										z = 0.1,
+									},
+									singlePva = {
+										scale = {
+											center = 0.1,
+											min = -0.3,
+											max = 0.5,
+										},
+										velocity = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+										acceleration = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+									},
 								},
 							},
 							children = {},
@@ -395,7 +679,11 @@ return {
 								b = 255,
 								a = 150,
 							},
-							visual = {},
+							visual = {
+								sprite = {
+									billboard = 0,
+								},
+							},
 							life = {
 								center = 120,
 								min = 120,
@@ -419,6 +707,23 @@ return {
 									x = 0,
 									y = 0,
 									z = 0,
+								},
+								positionRange = {
+									center = {
+										x = 0,
+										y = 0,
+										z = 0,
+									},
+									min = {
+										x = -0.5,
+										y = -0.5,
+										z = -2,
+									},
+									max = {
+										x = 0.5,
+										y = 0.5,
+										z = 2,
+									},
 								},
 								velocity = {
 									center = {
@@ -472,12 +777,73 @@ return {
 										min = 0,
 										max = 0,
 									},
+									rotation3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
+									speed3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
 								},
 								size = {
 									type = 3,
 									start = 0.09999999,
 									finish = 0.09999999,
 									envelope = 0.4,
+									startVector = {
+										x = 0.09999999,
+										y = 0.09999999,
+										z = 0.09999999,
+									},
+									finishVector = {
+										x = 0.09999999,
+										y = 0.09999999,
+										z = 0.09999999,
+									},
+									singlePva = {
+										scale = {
+											center = 0.09999999,
+											min = -0.3,
+											max = 0.5,
+										},
+										velocity = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+										acceleration = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+									},
 								},
 							},
 							children = {},
@@ -502,7 +868,11 @@ return {
 				b = 255,
 				a = 255,
 			},
-			visual = {},
+			visual = {
+				sprite = {
+					billboard = 0,
+				},
+			},
 			life = {
 				center = 300,
 				min = 300,
@@ -526,6 +896,23 @@ return {
 					x = -50,
 					y = -15,
 					z = 0,
+				},
+				positionRange = {
+					center = {
+						x = -50,
+						y = -15,
+						z = 0,
+					},
+					min = {
+						x = -50,
+						y = -15,
+						z = 0,
+					},
+					max = {
+						x = -50,
+						y = -15,
+						z = 0,
+					},
 				},
 				velocity = {
 					center = {
@@ -579,12 +966,73 @@ return {
 						min = 0,
 						max = 0,
 					},
+					rotation3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = -20,
+						},
+						min = {
+							x = 0,
+							y = -20,
+							z = -30,
+						},
+						max = {
+							x = 0,
+							y = 20,
+							z = -10,
+						},
+					},
+					speed3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+					},
 				},
 				size = {
 					type = 3,
 					start = 0.9,
 					finish = 0.9,
 					envelope = 0.05,
+					startVector = {
+						x = 0.9,
+						y = 0.9,
+						z = 0.9,
+					},
+					finishVector = {
+						x = 0.9,
+						y = 0.9,
+						z = 0.9,
+					},
+					singlePva = {
+						scale = {
+							center = 0.9,
+							min = 0.8,
+							max = 0.9,
+						},
+						velocity = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+						acceleration = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+					},
 				},
 			},
 			children = {
@@ -630,24 +1078,77 @@ return {
 					},
 					transform = {
 						position = {
-							x = 0,
-							y = 0,
+							x = 15.29667,
+							y = 13.34676,
 							z = 0,
 						},
-						velocity = {
+						positionRange = {
 							center = {
-								x = 0,
-								y = 0,
+								x = 15.29667,
+								y = 13.34676,
 								z = 0,
 							},
 							min = {
-								x = 0,
-								y = 0,
+								x = 15.29667,
+								y = 13.34676,
 								z = 0,
 							},
 							max = {
-								x = 0,
-								y = 0,
+								x = 15.29667,
+								y = 13.34676,
+								z = 0,
+							},
+						},
+						positionKeys = {
+							frames = {
+								0,
+								35,
+								49,
+								97,
+								120,
+							},
+							values = {
+								{
+									x = 15.29667,
+									y = 13.34676,
+									z = 0,
+								},
+								{
+									x = 59.65453,
+									y = 31.5350386,
+									z = 0,
+								},
+								{
+									x = 57.1879817,
+									y = 38.81035,
+									z = 0,
+								},
+								{
+									x = 48.7312449,
+									y = 24.16331,
+									z = 0,
+								},
+								{
+									x = 44.6790584,
+									y = 37.5930739,
+									z = 0,
+								},
+							},
+						},
+						velocity = {
+							center = {
+								x = 0.244853237,
+								y = 0.202052616,
+								z = 0,
+							},
+							min = {
+								x = 0.244853237,
+								y = 0.202052616,
+								z = 0,
+							},
+							max = {
+								x = 0.244853237,
+								y = 0.202052616,
 								z = 0,
 							},
 						},
@@ -669,10 +1170,10 @@ return {
 							},
 						},
 						speed = {
-							min = 0,
-							max = 0,
+							min = 0.317456087,
+							max = 0.317456087,
 						},
-						emissionDirection = "Top",
+						emissionDirection = "Right",
 						spreadAngle = 0,
 						rotation = {
 							type = 0,
@@ -686,12 +1187,56 @@ return {
 								min = 0,
 								max = 0,
 							},
+							rotation3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
+							speed3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
 						},
 						size = {
 							type = 0,
 							start = 1,
 							finish = 1,
 							envelope = 0,
+							startVector = {
+								x = 1,
+								y = 1,
+								z = 1,
+							},
+							finishVector = {
+								x = 1,
+								y = 1,
+								z = 1,
+							},
 						},
 					},
 					children = {
@@ -706,12 +1251,16 @@ return {
 							fadeIn = 0,
 							fadeOut = 0,
 							color = {
-								r = 255,
-								g = 255,
+								r = 140,
+								g = 197,
 								b = 255,
 								a = 255,
 							},
-							visual = {},
+							visual = {
+								sprite = {
+									billboard = 0,
+								},
+							},
 							life = {
 								center = 120,
 								min = 120,
@@ -735,6 +1284,23 @@ return {
 									x = 0,
 									y = 0,
 									z = 0,
+								},
+								positionRange = {
+									center = {
+										x = 0,
+										y = 0,
+										z = 0,
+									},
+									min = {
+										x = -0.5,
+										y = -0.5,
+										z = -2,
+									},
+									max = {
+										x = 0.5,
+										y = 0.5,
+										z = 2,
+									},
 								},
 								velocity = {
 									center = {
@@ -788,12 +1354,73 @@ return {
 										min = 0,
 										max = 0,
 									},
+									rotation3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
+									speed3 = {
+										center = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										min = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+										max = {
+											x = 0,
+											y = 0,
+											z = 0,
+										},
+									},
 								},
 								size = {
 									type = 3,
 									start = 0.09999999,
 									finish = 0.09999999,
 									envelope = 0.4,
+									startVector = {
+										x = 0.09999999,
+										y = 0.09999999,
+										z = 0.09999999,
+									},
+									finishVector = {
+										x = 0.09999999,
+										y = 0.09999999,
+										z = 0.09999999,
+									},
+									singlePva = {
+										scale = {
+											center = 0.09999999,
+											min = -0.3,
+											max = 0.5,
+										},
+										velocity = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+										acceleration = {
+											center = 0,
+											min = 0,
+											max = 0,
+										},
+									},
 								},
 							},
 							children = {},
@@ -818,7 +1445,11 @@ return {
 				b = 255,
 				a = 255,
 			},
-			visual = {},
+			visual = {
+				sprite = {
+					billboard = 0,
+				},
+			},
 			life = {
 				center = 240,
 				min = 240,
@@ -842,6 +1473,23 @@ return {
 					x = 0,
 					y = 0,
 					z = 0,
+				},
+				positionRange = {
+					center = {
+						x = 0,
+						y = 0,
+						z = 0,
+					},
+					min = {
+						x = -30,
+						y = -30,
+						z = -30,
+					},
+					max = {
+						x = 30,
+						y = 30,
+						z = 30,
+					},
 				},
 				velocity = {
 					center = {
@@ -895,12 +1543,73 @@ return {
 						min = 0,
 						max = 0,
 					},
+					rotation3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+					},
+					speed3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+					},
 				},
 				size = {
 					type = 3,
 					start = 0.1,
 					finish = 0.1,
 					envelope = 0,
+					startVector = {
+						x = 0.1,
+						y = 0.1,
+						z = 0.1,
+					},
+					finishVector = {
+						x = 0.1,
+						y = 0.1,
+						z = 0.1,
+					},
+					singlePva = {
+						scale = {
+							center = 0.1,
+							min = 0.1,
+							max = 0.1,
+						},
+						velocity = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+						acceleration = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+					},
 				},
 			},
 			children = {},
@@ -921,7 +1630,11 @@ return {
 				b = 255,
 				a = 255,
 			},
-			visual = {},
+			visual = {
+				sprite = {
+					billboard = 0,
+				},
+			},
 			life = {
 				center = 300,
 				min = 300,
@@ -945,6 +1658,23 @@ return {
 					x = -100,
 					y = 0,
 					z = 0,
+				},
+				positionRange = {
+					center = {
+						x = -100,
+						y = 0,
+						z = 0,
+					},
+					min = {
+						x = -100,
+						y = -20,
+						z = -20,
+					},
+					max = {
+						x = -100,
+						y = 20,
+						z = 20,
+					},
 				},
 				velocity = {
 					center = {
@@ -998,12 +1728,73 @@ return {
 						min = 0,
 						max = 0,
 					},
+					rotation3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 70,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 50,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 90,
+						},
+					},
+					speed3 = {
+						center = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						min = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+						max = {
+							x = 0,
+							y = 0,
+							z = 0,
+						},
+					},
 				},
 				size = {
 					type = 3,
 					start = 1,
 					finish = 1,
 					envelope = 0,
+					startVector = {
+						x = 1,
+						y = 1,
+						z = 1,
+					},
+					finishVector = {
+						x = 1,
+						y = 1,
+						z = 1,
+					},
+					singlePva = {
+						scale = {
+							center = 1,
+							min = 1,
+							max = 1,
+						},
+						velocity = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+						acceleration = {
+							center = 0,
+							min = 0,
+							max = 0,
+						},
+					},
 				},
 			},
 			children = {
@@ -1023,7 +1814,21 @@ return {
 						b = 255,
 						a = 255,
 					},
-					visual = {},
+					visual = {
+						sprite = {
+							billboard = 1,
+							position = {
+								center = {
+									x = 0,
+									y = -0.5,
+								},
+								size = {
+									x = 0.8,
+									y = 3,
+								},
+							},
+						},
+					},
 					life = {
 						center = 240,
 						min = 240,
@@ -1047,6 +1852,23 @@ return {
 							x = 0,
 							y = 0,
 							z = 0,
+						},
+						positionRange = {
+							center = {
+								x = 0,
+								y = 0,
+								z = 0,
+							},
+							min = {
+								x = 0,
+								y = 0,
+								z = 0,
+							},
+							max = {
+								x = 0,
+								y = 0,
+								z = 0,
+							},
 						},
 						velocity = {
 							center = {
@@ -1100,12 +1922,73 @@ return {
 								min = 0,
 								max = 0,
 							},
+							rotation3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
+							speed3 = {
+								center = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								min = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+								max = {
+									x = 0,
+									y = 0,
+									z = 0,
+								},
+							},
 						},
 						size = {
 							type = 3,
 							start = 0.1,
 							finish = 0.1,
 							envelope = 0.0999999963,
+							startVector = {
+								x = 0.1,
+								y = 0.1,
+								z = 0.1,
+							},
+							finishVector = {
+								x = 0.1,
+								y = 0.1,
+								z = 0.1,
+							},
+							singlePva = {
+								scale = {
+									center = 0.1,
+									min = 7.45058100e-9,
+									max = 0.2,
+								},
+								velocity = {
+									center = 0,
+									min = 0,
+									max = 0,
+								},
+								acceleration = {
+									center = 0,
+									min = 0,
+									max = 0,
+								},
+							},
 						},
 					},
 					children = {},

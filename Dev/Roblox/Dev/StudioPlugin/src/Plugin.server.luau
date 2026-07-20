@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Selection = game:GetService("Selection")
 local StudioService = game:GetService("StudioService")
 local Workspace = game:GetService("Workspace")
+local AssetService = game:GetService("AssetService")
 
 local Converter = require(script.Parent:WaitForChild("PluginConverter"))
 
@@ -39,8 +40,9 @@ pluginWidget.Title = "Effekseer for Roblox"
 local activeController = nil
 local activeAnchor: BasePart? = nil
 local lastImportedModule: ModuleScript? = nil
-local sessionAssetMap: { [string]: string } = {}
+local sessionAssetMap: { [string]: any } = {}
 local heldImportedFiles = {}
+local heldPreviewImages = {}
 local importedTextureCount = 0
 local previewModuleName: string? = nil
 local statusLabel: TextLabel? = nil
@@ -174,19 +176,26 @@ local function fileName(file, fallback: string): string
 	return if ok and type(value) == "string" and value ~= "" then value else fallback
 end
 
-local function mapAssetName(name: string, temporaryId: string)
+local function mapAssetValue(prefix: string, name: string, value)
 	local basename = name:gsub("\\", "/"):match("([^/]+)$") or name
-	sessionAssetMap[basename] = temporaryId
-	sessionAssetMap["Texture/" .. basename] = temporaryId
-	sessionAssetMap["Model/" .. basename] = temporaryId
+	sessionAssetMap[prefix .. basename] = value
+	sessionAssetMap[prefix .. "Texture/" .. basename] = value
+	sessionAssetMap[prefix .. "Model/" .. basename] = value
 
 	local lowerBasename = string.lower(basename)
-	sessionAssetMap[lowerBasename] = temporaryId
-	sessionAssetMap["texture/" .. lowerBasename] = temporaryId
-	sessionAssetMap["model/" .. lowerBasename] = temporaryId
+	sessionAssetMap[prefix .. lowerBasename] = value
+	sessionAssetMap[prefix .. "texture/" .. lowerBasename] = value
+	sessionAssetMap[prefix .. "model/" .. lowerBasename] = value
 end
 
-local function assetMapValue(assetPath: string): string?
+local function mapAssetName(name: string, temporaryId: string, additivePreviewContent)
+	mapAssetValue("", name, temporaryId)
+	if additivePreviewContent then
+		mapAssetValue("additive:", name, additivePreviewContent)
+	end
+end
+
+local function assetMapValue(assetPath: string): any
 	local direct = sessionAssetMap[assetPath]
 	if direct and direct ~= "" then
 		return direct
@@ -237,6 +246,45 @@ local function missingTexturePaths(effect): { string }
 	return missing
 end
 
+local function createAdditivePreviewContent(temporaryId: string)
+	local ok, content = pcall(function()
+		if not Content or not Content.fromUri or not Content.fromObject then
+			return nil
+		end
+		if not AssetService.CreateEditableImageAsync or not buffer then
+			return nil
+		end
+
+		local image = AssetService:CreateEditableImageAsync(Content.fromUri(temporaryId))
+		if not image then
+			return nil
+		end
+		local size = image.Size
+		local width = math.floor(size.X)
+		local height = math.floor(size.Y)
+		if width <= 0 or height <= 0 or width * height > 4194304 then
+			return nil
+		end
+
+		local pixels = image:ReadPixelsBuffer(Vector2.zero, size)
+		for pixel = 0, width * height - 1 do
+			local index = pixel * 4
+			local r = buffer.readu8(pixels, index)
+			local g = buffer.readu8(pixels, index + 1)
+			local b = buffer.readu8(pixels, index + 2)
+			local a = buffer.readu8(pixels, index + 3)
+			local luminance = math.floor(r * 0.2126 + g * 0.7152 + b * 0.0722 + 0.5)
+			local alpha = math.floor((a * luminance + 127) / 255)
+			buffer.writeu8(pixels, index + 3, alpha)
+		end
+
+		image:WritePixelsBuffer(Vector2.zero, size, pixels)
+		table.insert(heldPreviewImages, image)
+		return Content.fromObject(image)
+	end)
+	return if ok then content else nil
+end
+
 local function importTextureFiles(files): number
 	local count = 0
 	for _, file in ipairs(files) do
@@ -244,8 +292,9 @@ local function importTextureFiles(files): number
 			return file:GetTemporaryId()
 		end)
 		if ok and temporaryId and temporaryId ~= "" then
+			local additivePreviewContent = createAdditivePreviewContent(temporaryId)
 			table.insert(heldImportedFiles, file)
-			mapAssetName(fileName(file, "Texture.png"), temporaryId)
+			mapAssetName(fileName(file, "Texture.png"), temporaryId, additivePreviewContent)
 			count += 1
 			importedTextureCount += 1
 		else
@@ -442,8 +491,11 @@ local function previewSelected()
 		autoDestroy = false,
 		assetMap = sessionAssetMap,
 		hideTarget = true,
+		unitScale = (effect.unitScale or 0.2) * 10,
 		particleSizeScale = 0.45,
 		burstTaskLimit = 500,
+		useAdditiveSpriteParts = true,
+		useAdditivePreviewTexture = true,
 	})
 	previewModuleName = module.Name
 	refreshUiState()
