@@ -20,8 +20,10 @@ Converter feature coverage:
 - Effekseer 1.5+ `DrawingValues/ColorAll` StandardColor (Fixed / Random / Easing; FCurve and Gradient fall back to fixed with a warning)
 - Node sounds (`SoundValues`) convert to Roblox `Sound` playback when a sound asset id is mapped
 - "Delete when life expires = off" nodes live for the whole effect timeline
+- Easing interpolation curves: legacy StartSpeed/EndSpeed cubics, the 1.8 standard easing functions (Quadratic..Quintic, Back, Bounce), and 3-point middle values are baked into sampled progress curves that keep the start/end randomness
+- Emitter-path parents spawn an invisible carrier part per particle instance, so child nodes are generated per parent particle and follow its trajectory (bounded by `burstTaskLimit`)
 
-Unsupported features (distortion, custom materials, subtract/multiply blending, attractive force, RotateToViewpoint/Velocity, UV FCurve, model-surface spawning) are reported in the conversion warnings instead of being silently dropped. Remaining approximations: per-parent-particle child emission only applies on the quad path, and easing interpolation curves (StartSpeed/EndSpeed) are linearized.
+Unsupported features (distortion, custom materials, subtract/multiply blending, attractive force, RotateToViewpoint/Velocity, UV FCurve, model-surface spawning) are reported in the conversion warnings instead of being silently dropped.
 
 ## Requirements
 
@@ -109,7 +111,7 @@ argon serve Dev/Plugin/default.project.json
 
 ## Studio plugin
 
-The Studio plugin lets artists import effects without Rojo or Argon in the target project. It installs the `EffekseerRoblox` runtime into `ReplicatedStorage`, imports external `.efkproj` files into `ReplicatedStorage.EffekseerEffects`, can also import already generated `.luau` effect modules, imports local texture files for Studio-only preview through temporary `rbxtemp://` content IDs, and previews the selected ModuleScript in Studio.
+The Studio plugin lets artists import effects without Rojo or Argon in the target project. It installs the `EffekseerRoblox` runtime into `ReplicatedStorage`, imports external `.efkproj` and `.efkefc` files into `ReplicatedStorage.EffekseerEffects` (the packaged `.efkefc` format is decompressed by a pure-Luau DEFLATE decoder), can also import already generated `.luau` effect modules, imports local texture files for Studio-only preview through temporary `rbxtemp://` content IDs, and previews the selected ModuleScript in Studio.
 
 Build the local plugin package:
 

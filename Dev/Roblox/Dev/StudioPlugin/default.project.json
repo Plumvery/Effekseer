@@ -6,7 +6,7 @@
       "$path": "src/Plugin.server.luau"
     },
     "PluginConverter": {
-      "$path": "src/PluginConverter.luau"
+      "$path": "src/PluginConverter"
     },
     "EffekseerRoblox": {
       "$path": "../Plugin/src/ReplicatedStorage/EffekseerRoblox"

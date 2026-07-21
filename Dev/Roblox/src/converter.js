@@ -490,6 +490,131 @@ function fcurveContainerAt(node, candidates) {
 	return null;
 }
 
+const EASING_SAMPLE_COUNT = 13;
+
+// Exact port of the runtime's getEaseOutBounce (Effekseer.Easing.h).
+function easeOutBounceValue(t) {
+	if (t < 4 / 11) {
+		t = (t / 4) * 11;
+		return t * t;
+	}
+	if (t < 8 / 11) {
+		t = t - 4 / 11 - 2 / 11;
+		return 1 + (t * t - (2 / 11) * (2 / 11)) * 8;
+	}
+	if (t < 10 / 11) {
+		t = t - 8 / 11 - 1 / 11;
+		return 1 + (t * t - (1 / 11) * (1 / 11)) * 8;
+	}
+	t = t - 10 / 11 - 0.5 / 11;
+	return 1 + (t * t - (0.5 / 11) * (0.5 / 11)) * 8;
+}
+
+function easeInPower(t, power) {
+	return Math.pow(t, power);
+}
+
+function easeOutPower(t, power) {
+	return 1 - Math.pow(1 - t, power);
+}
+
+function easeInOutPower(t, power) {
+	if (t <= 0.5) {
+		return Math.pow(t * 2, power) * 0.5;
+	}
+	return 1 - Math.pow((1 - t) * 2, power) * 0.5;
+}
+
+function easeBack(t) {
+	const c = 1.8;
+	return (c + 1) * t * t * t - c * t * t;
+}
+
+// Effekseer EasingType values 10..62 (Effekseer.Easing.h getEaseValue).
+function standardEasingValue(type, t) {
+	const power = Math.floor(type / 10) + 1;
+	if (type >= 10 && type <= 42) {
+		const variant = type % 10;
+		if (variant === 0) {
+			return easeInPower(t, power);
+		}
+		if (variant === 1) {
+			return easeOutPower(t, power);
+		}
+		return easeInOutPower(t, power);
+	}
+	if (type === 50) {
+		return easeBack(t);
+	}
+	if (type === 51) {
+		return 1 - easeBack(1 - t);
+	}
+	if (type === 52) {
+		return t <= 0.5 ? easeBack(t * 2) * 0.5 : 1 - easeBack((1 - t) * 2) * 0.5;
+	}
+	if (type === 60) {
+		return 1 - easeOutBounceValue(1 - t);
+	}
+	if (type === 61) {
+		return easeOutBounceValue(t);
+	}
+	if (type === 62) {
+		return t <= 0.5 ? (1 - easeOutBounceValue(1 - t * 2)) * 0.5 : easeOutBounceValue((t - 0.5) * 2) * 0.5 + 0.5;
+	}
+	return null;
+}
+
+// Returns sampled easing progress values (uniform 0..1 times) or null when linear.
+function easingProgressValues(easingNode) {
+	if (!easingNode) {
+		return null;
+	}
+	const type = intAt(easingNode, "Type", 0);
+	const startSpeed = numberAt(easingNode, "StartSpeed", 0);
+	const endSpeed = numberAt(easingNode, "EndSpeed", 0);
+	if (type === 1) {
+		return null;
+	}
+
+	let evaluate = null;
+	if (type === 0) {
+		if (startSpeed === 0 && endSpeed === 0) {
+			return null;
+		}
+		// MathUtl.Easing: speeds are slope angles offset from the linear 45 degrees.
+		const g1 = Math.tan(((startSpeed + 45) * Math.PI) / 180);
+		const g2 = Math.tan(((endSpeed + 45) * Math.PI) / 180);
+		const c = g1;
+		const a = g2 - g1 - (1 - c) * 2;
+		const b = (g2 - g1 - a * 3) / 2;
+		evaluate = (t) => a * t * t * t + b * t * t + c * t;
+	} else {
+		if (standardEasingValue(type, 0.5) == null) {
+			return null;
+		}
+		evaluate = (t) => standardEasingValue(type, t);
+	}
+
+	const values = [];
+	for (let index = 0; index < EASING_SAMPLE_COUNT; index++) {
+		const value = evaluate(index / (EASING_SAMPLE_COUNT - 1));
+		values.push(Math.round(value * 1e6) / 1e6);
+	}
+	return values;
+}
+
+function easingMiddleVectorAt(easingNode, start, finish) {
+	if (!easingNode || !boolAt(easingNode, "IsMiddleEnabled", false)) {
+		return null;
+	}
+	const defaults = {
+		x: ((start.center.x || 0) + (finish.center.x || 0)) * 0.5,
+		y: ((start.center.y || 0) + (finish.center.y || 0)) * 0.5,
+		z: ((start.center.z || 0) + (finish.center.z || 0)) * 0.5,
+	};
+	return randomVectorAt(easingNode, "Middle", defaults);
+}
+
 function uvPayload(node, warnings, nodeName) {
 	const uvType = intAt(node, "RendererCommonValues/UV", 0);
 	if (uvType === 0) {
@@ -776,7 +901,7 @@ function colorPayload(node, warnings, nodeName) {
 			const end = colorRangeAt(standard, "Easing/End", start);
 			return {
 				color: start,
-				colorOverLife: { start, finish: end },
+				colorOverLife: { start, finish: end, progress: easingProgressValues(find(standard, "Easing")) },
 			};
 		}
 		if (mode === 1 && find(standard, "Random")) {
@@ -811,7 +936,11 @@ function colorPayload(node, warnings, nodeName) {
 			const end = colorRangeAt(node, `${basePath}/ColorAll_Easing/End`, start);
 			return {
 				color: start,
-				colorOverLife: { start, finish: end },
+				colorOverLife: {
+					start,
+					finish: end,
+					progress: easingProgressValues(find(node, `${basePath}/ColorAll_Easing`)),
+				},
 			};
 		}
 		if (mode === 1 && find(node, `${basePath}/ColorAll_Random`)) {
@@ -996,6 +1125,7 @@ function locationPayload(node, warnings, nodeName, life) {
 	let velocity = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let acceleration = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let positionKeys = null;
+	let positionEasing = null;
 
 	if (locationType === 0) {
 		position = fixedVectorAt(node, "LocationValues/Fixed/Location", { x: 0, y: 0, z: 0 });
@@ -1006,11 +1136,17 @@ function locationPayload(node, warnings, nodeName, life) {
 		velocity = randomVectorAt(node, "LocationValues/PVA/Velocity", { x: 0, y: 0, z: 0 });
 		acceleration = randomVectorAt(node, "LocationValues/PVA/Acceleration", { x: 0, y: 0, z: 0 });
 	} else if (locationType === 2) {
+		const easingNode = find(node, "LocationValues/Easing");
 		const start = randomVectorAt(node, "LocationValues/Easing/Start", { x: 0, y: 0, z: 0 });
 		const finish = randomVectorAt(node, "LocationValues/Easing/End", start.center);
 		position = start.center;
 		positionRange = start;
 		velocity = vectorVelocityFromRanges(start, finish, Math.max(1, life.center || 1));
+		const progress = easingProgressValues(easingNode);
+		const middle = easingMiddleVectorAt(easingNode, start, finish);
+		if (progress || middle) {
+			positionEasing = { start, finish, middle, progress };
+		}
 	} else if (locationType === 3) {
 		const container = fcurveContainerAt(node, [
 			"LocationValues/LocationFCurve/FCurve",
@@ -1045,6 +1181,7 @@ function locationPayload(node, warnings, nodeName, life) {
 		position,
 		positionRange,
 		positionKeys,
+		positionEasing,
 		velocity,
 		acceleration,
 		emissionDirection: dominantDirection(velocity.center),
@@ -1059,6 +1196,7 @@ function rotationPayload(node, life, warnings, nodeName) {
 	let rotation3 = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let speed3 = randomVectorAt(node, "__missing__", { x: 0, y: 0, z: 0 });
 	let rotationKeys = null;
+	let rotationEasing = null;
 
 	if (rotationType === 0) {
 		const fixed = fixedVectorAt(node, "RotationValues/Fixed/Rotation", { x: 0, y: 0, z: 0 });
@@ -1072,6 +1210,7 @@ function rotationPayload(node, life, warnings, nodeName) {
 		rotation = randomNumberAt(node, "RotationValues/PVA/Rotation/Z", 0);
 		speed = randomNumberAt(node, "RotationValues/PVA/Velocity/Z", 0);
 	} else if (rotationType === 2) {
+		const easingNode = find(node, "RotationValues/Easing");
 		const start3 = randomVectorAt(node, "RotationValues/Easing/Start", { x: 0, y: 0, z: 0 });
 		const finish3 = randomVectorAt(node, "RotationValues/Easing/End", start3.center);
 		const frames = Math.max(1, life.center || 1);
@@ -1085,6 +1224,11 @@ function rotationPayload(node, life, warnings, nodeName) {
 			{ center: finish3.center.z, min: finish3.min.z, max: finish3.max.z },
 			frames,
 		);
+		const progress = easingProgressValues(easingNode);
+		const middle = easingMiddleVectorAt(easingNode, start3, finish3);
+		if (progress || middle) {
+			rotationEasing = { start: start3, finish: finish3, middle, progress };
+		}
 	} else if (rotationType === 3) {
 		rotation = randomNumberAt(node, "RotationValues/AxisPVA/Rotation", 0);
 		speed = randomNumberAt(node, "RotationValues/AxisPVA/Velocity", 0);
@@ -1127,7 +1271,7 @@ function rotationPayload(node, life, warnings, nodeName) {
 		);
 	}
 
-	return { type: rotationType, rotation, speed, rotation3, speed3, rotationKeys };
+	return { type: rotationType, rotation, speed, rotation3, speed3, rotationKeys, rotationEasing };
 }
 
 function scalePayload(node, life, warnings, nodeName) {
@@ -1164,6 +1308,7 @@ function scalePayload(node, life, warnings, nodeName) {
 		finishVector = scaleVector({ x: endX, y: endY, z: endZ });
 		pva = { scale: base, velocity, acceleration };
 	} else if (scaleType === 2) {
+		const easingNode = find(node, "ScalingValues/Easing");
 		const startRange = randomVectorAt(node, "ScalingValues/Easing/Start", { x: 1, y: 1, z: 1 });
 		const finishRange = randomVectorAt(node, "ScalingValues/Easing/End", startRange.center);
 		start = Math.max(0, averageXY(startRange.center));
@@ -1176,7 +1321,12 @@ function scalePayload(node, life, warnings, nodeName) {
 		);
 		startVector = scaleVector(startRange.center);
 		finishVector = scaleVector(finishRange.center);
-		easing = { start: startRange, finish: finishRange };
+		easing = {
+			start: startRange,
+			finish: finishRange,
+			middle: easingMiddleVectorAt(easingNode, startRange, finishRange),
+			progress: easingProgressValues(easingNode),
+		};
 	} else if (scaleType === 3) {
 		const base = randomNumberAt(node, "ScalingValues/SinglePVA/Scale", 1);
 		const velocity = randomNumberAt(node, "ScalingValues/SinglePVA/Velocity", 0);
@@ -1189,6 +1339,7 @@ function scalePayload(node, life, warnings, nodeName) {
 		finishVector = singleScaleVector(base.center + velocity.center * lifeFrames + 0.5 * acceleration.center * lifeFrames * lifeFrames);
 		singlePva = { scale: base, velocity, acceleration };
 	} else if (scaleType === 4) {
+		const easingNode = find(node, "ScalingValues/SingleEasing");
 		const startRange = randomNumberAt(node, "ScalingValues/SingleEasing/Start", 1);
 		const finishRange = randomNumberAt(node, "ScalingValues/SingleEasing/End", startRange.center);
 		start = Math.max(0, Math.abs(startRange.center));
@@ -1196,7 +1347,14 @@ function scalePayload(node, life, warnings, nodeName) {
 		envelope = Math.max(0, Math.max(startRange.max - startRange.min, finishRange.max - finishRange.min) * 0.5);
 		startVector = singleScaleVector(startRange.center);
 		finishVector = singleScaleVector(finishRange.center);
-		singleEasing = { start: startRange, finish: finishRange };
+		singleEasing = {
+			start: startRange,
+			finish: finishRange,
+			middle: easingNode && boolAt(easingNode, "IsMiddleEnabled", false)
+				? randomNumberAt(easingNode, "Middle", (startRange.center + finishRange.center) * 0.5)
+				: null,
+			progress: easingProgressValues(easingNode),
+		};
 	} else if (scaleType === 5 || scaleType === 6) {
 		const container = scaleType === 5
 			? fcurveContainerAt(node, ["ScalingValues/FCurve/FCurve", "ScalingValues/FCurve"])
@@ -1487,6 +1645,7 @@ function convertNode(node, context, idPrefix) {
 			position: location.position,
 			positionRange: location.positionRange,
 			positionKeys: location.positionKeys,
+			positionEasing: location.positionEasing,
 			velocity: location.velocity,
 			acceleration: location.acceleration,
 			speed: { min: speedMin, max: speedMax },

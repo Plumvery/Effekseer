@@ -891,6 +891,68 @@ test("bakes location, rotation, and scaling FCurves into sampled keys", () => {
 	assert.strictEqual(countWarnings(effect, "scaling_fcurve"), 1);
 });
 
+test("bakes non-linear easing curves and middle points into progress samples", () => {
+	const project = createProject(`
+<Node>
+  <CommonValues>
+    <MaxGeneration><Value>1</Value></MaxGeneration>
+    <Life><Center>30</Center><Min>30</Min><Max>30</Max></Life>
+  </CommonValues>
+  <LocationValues>
+    <Type>2</Type>
+    <Easing>
+      <Start><Y><Center>0</Center></Y></Start>
+      <End><Y><Center>10</Center></Y></End>
+      <StartSpeed>30</StartSpeed>
+      <EndSpeed>-30</EndSpeed>
+    </Easing>
+  </LocationValues>
+  <ScalingValues>
+    <Type>4</Type>
+    <SingleEasing>
+      <Start><Center>0.5</Center></Start>
+      <End><Center>2</Center></End>
+      <Type>21</Type>
+      <IsMiddleEnabled>True</IsMiddleEnabled>
+      <Middle><Center>3</Center></Middle>
+    </SingleEasing>
+  </ScalingValues>
+  <Name>eased-curves</Name>
+  <Children />
+</Node>
+<Node>
+  <CommonValues><MaxGeneration><Value>1</Value></MaxGeneration></CommonValues>
+  <LocationValues>
+    <Type>2</Type>
+    <Easing>
+      <Start><Y><Center>0</Center></Y></Start>
+      <End><Y><Center>10</Center></Y></End>
+    </Easing>
+  </LocationValues>
+  <Name>linear-easing</Name>
+  <Children />
+</Node>`);
+	const { projectPath } = writeTempProject(project, "effekseer-roblox-easing-curve-");
+	const effect = convertProject(projectPath);
+	const eased = effect.nodes[0];
+	const linear = effect.nodes[1];
+
+	const positionProgress = eased.transform.positionEasing.progress;
+	assert.strictEqual(positionProgress.length, 13);
+	assert.strictEqual(positionProgress[0], 0);
+	assert.strictEqual(positionProgress[positionProgress.length - 1], 1);
+	// StartRapidly3 / EndSlowly3: the curve should be ahead of linear at the midpoint.
+	assert.ok(positionProgress[6] > 0.6, `expected fast start, got ${positionProgress[6]}`);
+
+	const scaleEasing = eased.transform.size.singleEasing;
+	assert.strictEqual(scaleEasing.progress.length, 13);
+	// EaseOutCubic reaches ~0.875 halfway through.
+	assert.ok(Math.abs(scaleEasing.progress[6] - 0.875) < 1e-6);
+	assert.strictEqual(scaleEasing.middle.center, 3);
+
+	assert.strictEqual(linear.transform.positionEasing, null);
+});
+
 test("captures animated ring radii and infinite-life removal flags", () => {
 	const project = createProject(`
 <Node>

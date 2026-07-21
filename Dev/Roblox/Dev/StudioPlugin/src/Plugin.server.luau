@@ -354,24 +354,27 @@ local function reportWarnings(effect)
 end
 
 local function importEfkproj()
-	local file = promptImportFile({ "efkproj" })
+	-- .efkproj is the editor's XML project; .efkefc is the packaged binary whose
+	-- EDIT chunk PluginConverter inflates and decodes directly.
+	local file = promptImportFile({ "efkproj", "efkefc" })
 	if not file then
 		return
 	end
 
 	installRuntime(false)
 	local name = safeName(fileName(file, "ImportedEffect.efkproj"), "ImportedEffect")
+	local sourceName = fileName(file, name .. ".efkproj")
 	local contents = readFile(file)
 	local effect = Converter.convertProject(contents, {
 		moduleName = name,
-		source = fileName(file, name .. ".efkproj"),
+		source = sourceName,
 		assetMap = sessionAssetMap,
 		useFallbackTextures = false,
 	})
 	if promptImportMissingTextures(effect) then
 		effect = Converter.convertProject(contents, {
 			moduleName = name,
-			source = fileName(file, name .. ".efkproj"),
+			source = sourceName,
 			assetMap = sessionAssetMap,
 			useFallbackTextures = false,
 		})
@@ -790,8 +793,8 @@ local function buildPluginGui()
 
 	local importSection = createSection(content, "Import")
 	importSection.LayoutOrder = 3
-	createActionButton(importSection, "Import .efkproj", "Convert and add to " .. EFFECTS_NAME, THEME.accent, function()
-		runPluginAction("Importing .efkproj", importEfkproj)
+	createActionButton(importSection, "Import .efkproj / .efkefc", "Convert and add to " .. EFFECTS_NAME, THEME.accent, function()
+		runPluginAction("Importing effect", importEfkproj)
 	end)
 	createActionButton(importSection, "Import Textures", "Load local images for this Studio session", THEME.warning, function()
 		runPluginAction("Importing textures", importTextures)
