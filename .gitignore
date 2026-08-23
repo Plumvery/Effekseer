@@ -33,7 +33,6 @@
 *.vspx
 *.exp
 .DS_Store
-.env
 
 [Oo]bj/
 CMakeFiles/
@@ -62,12 +61,15 @@ Dev/Editor/packages/
 mono_crash.*.json
 mono_crash.*.blob
 Script/__pycache__/aceutils.cpython-37.pyc
-__pycache__/
 Tool/fbxsdk
 
 EffekseerTool/
-Dev/Roblox/node_modules/
-Dev/Roblox/.env
-Dev/Roblox/rocas.toml
-Dev/Roblox/Dev/Plugin/*.rbxlx
-Dev/Roblox/Dev/Plugin/*.rbxlx.lock
+
+# git-lfs が worktree に掘る dev/null の残骸。
+# エージェントは git を `-c core.hooksPath=/dev/null` 付きで実行してリポジトリのフックを
+# 無効化する。この設定は GIT_CONFIG_PARAMETERS で子プロセスへ伝播し、worktree 作成時に
+# LFS ファイルを展開する git-lfs（windows amd64）がそれをヌルデバイスではなく実在パスと
+# 解釈して <worktree>/dev/null/ に LFS フック4本を書き出す。git が読むのは
+# core.hooksPath の実効値なので実行はされず無害だが、未追跡のまま残ると worktree が
+# 恒久的に dirty 扱いになり自動整理の対象から外れる。
+/dev/
