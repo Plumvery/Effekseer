@@ -43,8 +43,11 @@ Supported platforms
 Roblox bridge
 =========
 
-This fork includes an experimental Roblox bridge under `Dev/Roblox`.
-It converts `.efkproj` or `.efkefc` effects into Luau ModuleScripts and plays supported nodes through Roblox `ParticleEmitter` instances, so the output can be synced by Rojo or Argon.
+The Roblox bridge now lives in its own repository:
+**https://github.com/Plumvery/effekseer-for-roblox**
+
+It converts `.efkproj` or `.efkefc` effects into Luau ModuleScripts and plays supported nodes through Roblox primitives, so the output can be synced by Rojo or Argon.
+It contains no Effekseer C++ code and never depended on this repository's sources, so it was moved out of `Dev/Roblox` and can now be cloned on its own.
 
 Sponsors
 =========
